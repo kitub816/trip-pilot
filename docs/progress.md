@@ -4,9 +4,18 @@
 
 ## 当前阶段
 
-**Phase 2 已完成；Phase 3 尚未开始。本次完成后停止。**
+**Phase 3 已完成；Phase 4 尚未开始。**
 
-事实来源为当前代码与本文件。规格仍为根目录 `docs-project_spec.md`。[current_architecture.md](current_architecture.md) 保留 Phase 0 历史快照；其旧故障描述不能当作修复后的当前行为。
+事实来源为当前代码与本文件。规格为根目录 `docs-project_spec.md`。[current_architecture.md](current_architecture.md) 保留 Phase 0 历史快照；其旧故障描述不能当作修复后的当前行为。
+
+## Phase 3 做了什么
+
+- 新增请求级 `TripWorkflowState` 和最小 LangGraph：`START → plan → END`；已知业务错误进入显式失败终态。
+- 旅行路由现在只构建 `TravelConstraints` 并调用工作流；旧 `MultiAgentTripPlanner` 作为工作流节点的暂时适配器注入。
+- 每个请求创建独立的工作流对象和 state，工作流不保留前次约束、计划或错误；未实现 checkpoint 或恢复。
+- 新增 `backend/tests/test_phase3_workflow.py`，完整后端回归为 **57 passed**（10 条既有/依赖弃用警告）。
+
+Phase 3 修改文件：新增 `backend/app/workflows/__init__.py`、`backend/app/workflows/trip_workflow.py`、`backend/tests/test_phase3_workflow.py`；更新 `backend/app/api/routes/trip.py`、`backend/requirements.txt`、`docs/progress.md`、`docs/refactor_plan.md`；新增本文件对应的 `docs/phase3.md`。
 
 ## Phase 2 做了什么
 
@@ -46,7 +55,7 @@ Phase 2 修改文件：`backend/app/models/schemas.py`、新增 `backend/app/ser
 
 ## 架构变化
 
-当前主链为 FastAPI → TripRequest → Constraint Service → TravelConstraints → MultiAgentTripPlanner → 四个 SimpleAgent → MCP/LLM。已有统一配置、错误、日志和 lifespan 边界，阻塞 I/O 放工作线程；临时用进程内互斥及历史清理隔离请求。尚未实现 LangGraph、缓存、数据库或新的 Agent。地图解析仍是明确未就绪状态。
+当前主链为 FastAPI → TripRequest → Constraint Service → TravelConstraints → LangGraph → MultiAgentTripPlanner 适配节点 → 四个 SimpleAgent → MCP/LLM。已有统一配置、错误、日志和 lifespan 边界，阻塞 I/O 放工作线程；旧 Planner 仍临时使用进程内互斥及历史清理。尚未实现检索 Service、缓存、数据库或新的 Agent。地图解析仍是明确未就绪状态。
 
 MCPTool 0.2.9 的发现与调用使用每次操作的 MCPClient async context，SDK 不提供持久会话 close；本阶段不伪造关闭方法。LLM 关闭使用 SDK 的 _client.close 私有字段，已集中在 llm_service.py，版本变更时需复核。
 
@@ -73,14 +82,14 @@ MCPTool 0.2.9 的发现与调用使用每次操作的 MCPClient async context，
 3. 仅应用日志与 API 已去除原始敏感内容；第三方 HelloAgents/MCP 内部仍可能 print 工具参数/异常，本阶段没有修改 site-packages 或全局重定向 stdout；上线前需在 Tool Runtime 阶段统一收敛。run.py 的访问日志关闭不影响用户自行执行 uvicorn 的默认日志选项。
 4. 未做真实 API/地图联调，MCP 会话异常清理依赖 SDK；仅验证了应用的生命周期回调。
 5. LLM_TIMEOUT 是单次客户端超时，不是四 Agent 总 deadline；SDK 内部重试、客户端断开后的任务取消和前端 120 秒 timeout 尚未统一。同步工作线程不能靠超时强制杀死。
-6. 当前只允许每进程一个规划执行，多 worker 各自隔离；不是分布式并发控制或持久状态。LangGraph 请求状态仍待 Phase 3。
+6. 当前只允许每进程一个规划执行，多 worker 各自隔离；不是分布式并发控制或持久状态。LangGraph 只有内存请求 state，尚无 checkpoint。
 7. 日期和请求级约束已结构化；预算汇总、坐标/来源、开放时间及硬约束结果验证仍未实现。模型合法不等于行程可行；原 JSON 截取方式暂留，Structured Planner 在 Phase 10。
 8. 旧弃用告警与前端大包警告未在本阶段扩大处理；backend 全依赖环境未从零安装，仅固定已验证的 SDK 并补直接依赖。
 9. 旧示例凭据已移除但未撤销；若真实，仍需持有人轮换。
 
 ## 下一阶段建议
 
-只执行 Phase 3 LangGraph 基础 Workflow：建立请求级 typed state 和最小图编排，以现有 Planner 作为适配节点；不提前实现 Phase 4 的检索解析与并发。不自动进入下一阶段。
+执行 Phase 4：先为 Amap MCP 响应建立类型化 parser 和固定样例，再将景点、天气、酒店检索从 Agent 拆为 Service；只在独立 I/O 已被确认可安全隔离时并发，保留部分失败。
 
 ## Phase 0 记录
 
