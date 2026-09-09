@@ -8,6 +8,7 @@ from ..agents.trip_planner_agent import MultiAgentTripPlanner, get_trip_planner_
 from ..errors import AppError, upstream_failure
 from ..models.schemas import TripPlan
 from ..services.constraint_service import TravelConstraints
+from ..services.retrieval_service import TripRetrievalResult, retrieve_trip_context
 
 
 class TripWorkflowState(TypedDict):
@@ -17,6 +18,7 @@ class TripWorkflowState(TypedDict):
     status: Literal["planning", "completed", "failed"]
     plan: TripPlan | None
     error: AppError | None
+    retrieval: TripRetrievalResult | None
 
 
 PlannerFactory = Callable[[], MultiAgentTripPlanner]
@@ -39,7 +41,7 @@ class TripPlanningWorkflow:
 
     def plan(self, constraints: TravelConstraints) -> TripPlan:
         state = self._graph.invoke({
-            "constraints": constraints, "status": "planning", "plan": None, "error": None,
+            "constraints": constraints, "status": "planning", "plan": None, "error": None, "retrieval": None,
         })
         error = state["error"]
         if error is not None:
@@ -51,10 +53,18 @@ class TripPlanningWorkflow:
 
     def _plan(self, state: TripWorkflowState) -> dict[str, object]:
         try:
-            plan = self._planner_factory().plan_trip(state["constraints"])
-            return {"plan": plan, "status": "completed", "error": None}
+            retrieval = retrieve_trip_context(state["constraints"])
+            planner = self._planner_factory()
+            if hasattr(planner, "plan_from_retrieval"):
+                plan = planner.plan_from_retrieval(
+                    state["constraints"], retrieval.attractions, retrieval.weather, retrieval.hotels
+                )
+            else:
+                # Keeps isolated test doubles and older integrations compatible.
+                plan = planner.plan_trip(state["constraints"])
+            return {"plan": plan, "status": "completed", "error": None, "retrieval": retrieval}
         except AppError as error:
-            return {"plan": None, "status": "failed", "error": error}
+            return {"plan": None, "status": "failed", "error": error, "retrieval": None}
 
     @staticmethod
     def _next_node(state: TripWorkflowState) -> Literal["completed", "failed"]:

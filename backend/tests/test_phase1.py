@@ -16,7 +16,7 @@ from hello_agents import SimpleAgent
 from app.config import Settings, get_settings, validate_config, BACKEND_DIR
 from app.errors import ConfigurationError, PlanParseError, ServiceBusy, UpstreamError, UpstreamTimeout
 from app.api import main
-from app.api.routes import trip
+from app.api.routes import trip, map as map_routes, poi
 from app.agents import trip_planner_agent as planner_module
 from app.services import amap_service, llm_service, unsplash_service
 from app.models.schemas import TripRequest, TripPlan
@@ -104,11 +104,13 @@ def test_success_contract_and_request_id_uniqueness(client, monkeypatch):
     assert first.headers["x-request-id"] not in ("untrusted", second.headers["x-request-id"])
 
 
-@pytest.mark.parametrize("path", ["/api/map/poi?keywords=x&city=y", "/api/poi/search?keywords=x", "/api/map/weather?city=y"])
-def test_unimplemented_map_paths_fail_without_mcp(client, monkeypatch, path):
-    monkeypatch.setattr(amap_service, "MCPTool", Mock(side_effect=AssertionError("must not call MCP")))
-    response = client.get(path)
-    assert response.status_code == 503 and response.json()["error_code"] == "FEATURE_NOT_READY"
+def test_map_search_and_weather_routes_use_service(client, monkeypatch):
+    service = SimpleNamespace(search_poi=lambda *args: [], get_weather=lambda city: [])
+    monkeypatch.setattr(map_routes, "get_amap_service", lambda: service)
+    monkeypatch.setattr(poi, "get_amap_service", lambda: service)
+    for path in ("/api/map/poi?keywords=x&city=y", "/api/poi/search?keywords=x", "/api/map/weather?city=y"):
+        response = client.get(path)
+        assert response.status_code == 200 and response.json()["success"] is True
 
 
 def test_unimplemented_route(client, monkeypatch):

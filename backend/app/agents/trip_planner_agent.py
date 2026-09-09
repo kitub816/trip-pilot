@@ -6,7 +6,7 @@ from threading import Lock
 from hello_agents import SimpleAgent
 from hello_agents.tools import MCPTool
 from ..services.llm_service import get_llm
-from ..models.schemas import TripPlan
+from ..models.schemas import POIInfo, TripPlan, WeatherInfo
 from ..services.constraint_service import TravelConstraints
 from ..errors import upstream_failure, AppError, ConfigurationError, PlanParseError, ServiceBusy, UpstreamError
 from ..config import get_settings
@@ -165,29 +165,48 @@ class MultiAgentTripPlanner:
         self._run_lock = Lock()
         self.llm = get_llm()
         try:
-            self.amap_tool = MCPTool(name="amap", description="高德地图服务",
-                server_command=["uvx", "amap-mcp-server"],
-                env={"AMAP_MAPS_API_KEY": settings.amap_api_key.get_secret_value()}, auto_expand=True)
-            self.amap_tool.expandable = True
-            if not self.amap_tool.get_expanded_tools():
-                raise UpstreamError()
-            self.attraction_agent = SimpleAgent(name="景点搜索专家", llm=self.llm, system_prompt=ATTRACTION_AGENT_PROMPT)
-            self.weather_agent = SimpleAgent(name="天气查询专家", llm=self.llm, system_prompt=WEATHER_AGENT_PROMPT)
-            self.hotel_agent = SimpleAgent(name="酒店推荐专家", llm=self.llm, system_prompt=HOTEL_AGENT_PROMPT)
             self.planner_agent = SimpleAgent(name="行程规划专家", llm=self.llm, system_prompt=PLANNER_AGENT_PROMPT)
-            for agent in (self.attraction_agent, self.weather_agent, self.hotel_agent):
-                agent.add_tool(self.amap_tool)
         except AppError:
             raise
         except Exception as exc:
             raise upstream_failure(exc) from exc
 
     def _clear_history(self) -> None:
-        for agent in (self.attraction_agent, self.weather_agent, self.hotel_agent, self.planner_agent):
-            agent.clear_history()
+        for name in ("attraction_agent", "weather_agent", "hotel_agent", "planner_agent"):
+            agent = getattr(self, name, None)
+            if agent is not None:
+                agent.clear_history()
+
+    def plan_from_retrieval(self, request: TravelConstraints, attractions: tuple[POIInfo, ...],
+                            weather: tuple[WeatherInfo, ...], hotels: tuple[POIInfo, ...]) -> TripPlan:
+        """Use the LLM only for planning from Service-provided, typed candidates."""
+        if not self._run_lock.acquire(blocking=False):
+            raise ServiceBusy()
+        try:
+            self._clear_history()
+            logger.info("planning.started")
+            response = self.planner_agent.run(self._build_planner_query(
+                request,
+                json.dumps([poi.model_dump(mode="json") for poi in attractions], ensure_ascii=False),
+                json.dumps([item.model_dump(mode="json") for item in weather], ensure_ascii=False),
+                json.dumps([hotel.model_dump(mode="json") for hotel in hotels], ensure_ascii=False),
+            ))
+            plan = self._parse_response(response, request)
+            logger.info("planning.completed")
+            return plan
+        except AppError:
+            raise
+        except Exception as exc:
+            raise upstream_failure(exc) from exc
+        finally:
+            try:
+                self._clear_history()
+            finally:
+                self._run_lock.release()
 
     def plan_trip(self, request: TravelConstraints) -> TripPlan:
-        # Temporary isolation until request-scoped LangGraph state is introduced.
+        # Compatibility-only legacy entry point. Production requests use
+        # plan_from_retrieval after Phase 4 Service retrieval.
         # Reject overlap instead of accumulating unbounded work behind a slow model.
         if not self._run_lock.acquire(blocking=False):
             raise ServiceBusy()

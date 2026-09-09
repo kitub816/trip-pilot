@@ -1,6 +1,8 @@
 import socket
 import pytest
 from app.config import Settings, get_settings
+from app.services.retrieval_service import TripRetrievalResult
+from app.workflows import trip_workflow
 
 @pytest.fixture(autouse=True)
 def offline_settings(monkeypatch):
@@ -18,5 +20,9 @@ def offline_settings(monkeypatch):
             return original_connect(sock, address)
         raise AssertionError("External network is forbidden in offline tests")
     monkeypatch.setattr(socket.socket, "connect", deny_network)
+    monkeypatch.setattr(
+        trip_workflow, "retrieve_trip_context",
+        lambda constraints: TripRetrievalResult((), (), (), ()),
+    )
     yield
     get_settings.cache_clear()

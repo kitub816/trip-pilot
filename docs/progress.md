@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-**Phase 3 已完成；Phase 4 尚未开始。**
+**Phase 4 已完成；Phase 5 尚未开始。**
 
 事实来源为当前代码与本文件。规格为根目录 `docs-project_spec.md`。[current_architecture.md](current_architecture.md) 保留 Phase 0 历史快照；其旧故障描述不能当作修复后的当前行为。
 
@@ -16,6 +16,14 @@
 - 新增 `backend/tests/test_phase3_workflow.py`，完整后端回归为 **57 passed**（10 条既有/依赖弃用警告）。
 
 Phase 3 修改文件：新增 `backend/app/workflows/__init__.py`、`backend/app/workflows/trip_workflow.py`、`backend/tests/test_phase3_workflow.py`；更新 `backend/app/api/routes/trip.py`、`backend/requirements.txt`、`docs/progress.md`、`docs/refactor_plan.md`；新增本文件对应的 `docs/phase3.md`。
+
+## Phase 4 做了什么
+
+- `AmapService` 已实现 POI 和天气 MCP 调用及类型化 JSON parser；不合法记录被安全丢弃。
+- 新增 `TripRetrievalService`，并发调度偏好景点、酒店、天气检索，按 ID/名称去重并保留部分失败 warning。
+- 工作流生产路径现在由 Service 检索候选后调用 `plan_from_retrieval`；三个检索 Agent 不再在生产 Planner 初始化。
+- 共享 MCP SDK 调用仍受锁保护，避免在并发安全未经验证时复用同一会话。
+- 新增 Phase 4 parser/部分失败测试；完整后端回归为 **57 passed**。
 
 ## Phase 2 做了什么
 
@@ -89,7 +97,7 @@ MCPTool 0.2.9 的发现与调用使用每次操作的 MCPClient async context，
 
 ## 下一阶段建议
 
-执行 Phase 4：先为 Amap MCP 响应建立类型化 parser 和固定样例，再将景点、天气、酒店检索从 Agent 拆为 Service；只在独立 I/O 已被确认可安全隔离时并发，保留部分失败。
+执行 Phase 5：将 Amap 和 Planner 的 MCP 生命周期、参数校验、timeout、重试、限流及取消边界收敛到统一 Tool Runtime；不进入 Redis、数据库或预算引擎。
 
 ## Phase 0 记录
 
