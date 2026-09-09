@@ -80,11 +80,18 @@ export interface TripFormData {
   city: string
   start_date: string
   end_date: string
-  travel_days: number
-  transportation: string
-  accommodation: string
+  travel_days?: number
+  transportation: '公共交通' | '自驾' | '步行' | '混合'
+  accommodation: '经济型酒店' | '舒适型酒店' | '豪华酒店' | '民宿'
   preferences: string[]
   free_text_input: string
+  travelers?: number
+  budget_limit?: number
+  currency?: 'CNY'
+  must_visit?: string[]
+  avoid_places?: string[]
+  max_daily_walking_km?: number
+  max_single_transport_minutes?: number
 }
 
 export interface TripPlanResponse {
@@ -92,4 +99,3 @@ export interface TripPlanResponse {
   message: string
   data?: TripPlan
 }
-

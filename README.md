@@ -1,6 +1,6 @@
 # HelloAgents智能旅行助手 🌍✈️
 
-> TripPilot 当前完成 Phase 1（配置、日志、异常与请求隔离）。运行方式见 [Phase 1 说明](docs/phase1.md)，真实进度见 [progress.md](docs/progress.md)。下方保留原教程介绍；地图旁路解析尚未实现，当前明确返回未就绪，前端连线不是实际导航路线。
+> TripPilot 当前完成 Phase 2（Constraint Engine）。约束接口见 [Phase 2 说明](docs/phase2.md)，真实进度见 [progress.md](docs/progress.md)。下方保留原教程介绍；地图旁路解析尚未实现，当前明确返回未就绪，前端连线不是实际导航路线。
 
 基于HelloAgents框架构建的智能旅行规划助手,集成高德地图MCP服务,提供个性化的旅行计划生成。
 

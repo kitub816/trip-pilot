@@ -6,7 +6,8 @@ from threading import Lock
 from hello_agents import SimpleAgent
 from hello_agents.tools import MCPTool
 from ..services.llm_service import get_llm
-from ..models.schemas import TripRequest, TripPlan
+from ..models.schemas import TripPlan
+from ..services.constraint_service import TravelConstraints
 from ..errors import upstream_failure, AppError, ConfigurationError, PlanParseError, ServiceBusy, UpstreamError
 from ..config import get_settings
 
@@ -185,7 +186,7 @@ class MultiAgentTripPlanner:
         for agent in (self.attraction_agent, self.weather_agent, self.hotel_agent, self.planner_agent):
             agent.clear_history()
 
-    def plan_trip(self, request: TripRequest) -> TripPlan:
+    def plan_trip(self, request: TravelConstraints) -> TripPlan:
         # Temporary isolation until request-scoped LangGraph state is introduced.
         # Reject overlap instead of accumulating unbounded work behind a slow model.
         if not self._run_lock.acquire(blocking=False):
@@ -210,7 +211,7 @@ class MultiAgentTripPlanner:
             finally:
                 self._run_lock.release()
 
-    def _build_attraction_query(self, request: TripRequest) -> str:
+    def _build_attraction_query(self, request: TravelConstraints) -> str:
         """构建景点搜索查询 - 直接包含工具调用"""
         keywords = "景点"
         if request.preferences:
@@ -223,7 +224,7 @@ class MultiAgentTripPlanner:
         query = f"请使用amap_maps_text_search工具搜索{request.city}的{keywords}相关景点。\n[TOOL_CALL:amap_maps_text_search:keywords={keywords},city={request.city}]"
         return query
 
-    def _build_planner_query(self, request: TripRequest, attractions: str, weather: str, hotels: str = "") -> str:
+    def _build_planner_query(self, request: TravelConstraints, attractions: str, weather: str, hotels: str = "") -> str:
         """构建行程规划查询"""
         query = f"""请根据以下信息生成{request.city}的{request.travel_days}天旅行计划:
 
@@ -234,6 +235,12 @@ class MultiAgentTripPlanner:
 - 交通方式: {request.transportation}
 - 住宿: {request.accommodation}
 - 偏好: {', '.join(request.preferences) if request.preferences else '无'}
+- 出行人数: {request.travelers}
+- 总预算上限: {f'{request.budget_limit} {request.currency}' if request.budget_limit is not None else '未指定'}
+- 必去地点: {', '.join(request.must_visit) if request.must_visit else '无'}
+- 避开地点: {', '.join(request.avoid_places) if request.avoid_places else '无'}
+- 每日步行上限: {f'{request.max_daily_walking_km}公里' if request.max_daily_walking_km is not None else '未指定'}
+- 单段交通时间上限: {f'{request.max_single_transport_minutes}分钟' if request.max_single_transport_minutes is not None else '未指定'}
 
 **景点信息:**
 {attractions}
@@ -257,7 +264,7 @@ class MultiAgentTripPlanner:
 
         return query
     
-    def _parse_response(self, response: str, request: TripRequest) -> TripPlan:
+    def _parse_response(self, response: str, request: TravelConstraints) -> TripPlan:
         """Retain legacy JSON extraction, but never fabricate a fallback plan."""
         try:
             if "```" in response:

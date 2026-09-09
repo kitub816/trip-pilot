@@ -1,36 +1,88 @@
 """数据模型定义"""
 
-from typing import List, Optional, Union
-from pydantic import BaseModel, Field, field_validator
 from datetime import date
+from decimal import Decimal
+from enum import Enum
+from typing import List, Optional, Union
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 # ============ 请求模型 ============
 
+class ValueEnum(str, Enum):
+    def __str__(self) -> str:
+        return self.value
+
+
+class TransportationMode(ValueEnum):
+    PUBLIC_TRANSIT = "公共交通"
+    DRIVING = "自驾"
+    WALKING = "步行"
+    MIXED = "混合"
+
+
+class AccommodationType(ValueEnum):
+    ECONOMY_HOTEL = "经济型酒店"
+    COMFORT_HOTEL = "舒适型酒店"
+    LUXURY_HOTEL = "豪华酒店"
+    HOMESTAY = "民宿"
+
+
 class TripRequest(BaseModel):
-    """旅行规划请求"""
-    city: str = Field(..., description="目的地城市", example="北京")
-    start_date: str = Field(..., description="开始日期 YYYY-MM-DD", example="2025-06-01")
-    end_date: str = Field(..., description="结束日期 YYYY-MM-DD", example="2025-06-03")
-    travel_days: int = Field(..., description="旅行天数", ge=1, le=30, example=3)
-    transportation: str = Field(..., description="交通方式", example="公共交通")
-    accommodation: str = Field(..., description="住宿偏好", example="经济型酒店")
-    preferences: List[str] = Field(default=[], description="旅行偏好标签", example=["历史文化", "美食"])
-    free_text_input: Optional[str] = Field(default="", description="额外要求", example="希望多安排一些博物馆")
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "city": "北京",
-                "start_date": "2025-06-01",
-                "end_date": "2025-06-03",
-                "travel_days": 3,
-                "transportation": "公共交通",
-                "accommodation": "经济型酒店",
-                "preferences": ["历史文化", "美食"],
-                "free_text_input": "希望多安排一些博物馆"
-            }
-        }
+    """Backward-compatible request with optional structured constraints."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    city: str = Field(..., min_length=1, max_length=100)
+    start_date: date
+    end_date: date
+    travel_days: int | None = Field(default=None, ge=1, le=30)
+    transportation: TransportationMode
+    accommodation: AccommodationType
+    preferences: list[str] = Field(default_factory=list, max_length=30)
+    free_text_input: str = Field(default="", max_length=2000)
+    travelers: int | None = Field(default=None, ge=1, le=20)
+    budget_limit: Decimal | None = Field(default=None, gt=0, max_digits=10, decimal_places=2)
+    currency: str | None = Field(default=None, pattern="^CNY$")
+    must_visit: list[str] | None = Field(default=None, max_length=30)
+    avoid_places: list[str] | None = Field(default=None, max_length=30)
+    max_daily_walking_km: float | None = Field(default=None, gt=0, le=100)
+    max_single_transport_minutes: int | None = Field(default=None, ge=1, le=720)
+
+    @field_validator("preferences", "must_visit", "avoid_places", mode="before")
+    @classmethod
+    def normalize_name_lists(cls, values: list[str] | None) -> list[str] | None:
+        if values is None:
+            return None
+        if not isinstance(values, list):
+            raise ValueError("place and preference fields must be lists")
+        result: list[str] = []
+        seen: set[str] = set()
+        for raw_value in values:
+            if not isinstance(raw_value, str):
+                raise ValueError("place and preference items must be strings")
+            value = raw_value.strip()
+            key = value.casefold()
+            if value and key not in seen:
+                result.append(value)
+                seen.add(key)
+        return result
+
+    @model_validator(mode="after")
+    def validate_dates_and_duration(self) -> "TripRequest":
+        calculated_days = (self.end_date - self.start_date).days + 1
+        if calculated_days < 1:
+            raise ValueError("end_date must not be earlier than start_date")
+        if calculated_days > 30:
+            raise ValueError("trip duration must not exceed 30 days")
+        if self.travel_days is not None and self.travel_days != calculated_days:
+            raise ValueError("travel_days must match start_date and end_date")
+        avoided = {name.casefold() for name in self.avoid_places or []}
+        if any(name.casefold() in avoided for name in self.must_visit or []):
+            raise ValueError("a place cannot be both required and avoided")
+        self.travel_days = calculated_days
+        return self
 
 
 class POISearchRequest(BaseModel):
