@@ -1,0 +1,17 @@
+"""启动脚本"""
+
+import uvicorn
+from app.config import get_settings
+
+if __name__ == "__main__":
+    settings = get_settings()
+    
+    uvicorn.run(
+        "app.api.main:app",
+        host=settings.host,
+        port=settings.port,
+        reload=settings.debug,
+        log_level=settings.log_level.lower(),
+        access_log=False  # App logs omit query strings and untrusted request paths.
+    )
+

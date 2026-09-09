@@ -1,0 +1,39 @@
+"""Explicit configuration; never load another project's .env."""
+from functools import lru_cache
+from pathlib import Path
+from typing import Literal
+from pydantic import AliasChoices, Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=BACKEND_DIR / ".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore", populate_by_name=True)
+    app_name: str = "TripPilot"
+    app_version: str = "1.0.0"
+    debug: bool = False
+    host: str = "0.0.0.0"
+    port: int = Field(default=8000, ge=1, le=65535)
+    cors_origins: str = "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000"
+    amap_api_key: SecretStr = SecretStr("")
+    unsplash_access_key: SecretStr = SecretStr("")
+    unsplash_secret_key: SecretStr = SecretStr("")
+    llm_api_key: SecretStr = Field(default=SecretStr(""), validation_alias=AliasChoices("LLM_API_KEY", "OPENAI_API_KEY"))
+    llm_base_url: str = Field(default="https://api.openai.com/v1", validation_alias=AliasChoices("LLM_BASE_URL", "OPENAI_BASE_URL"))
+    llm_model: str = Field(default="", validation_alias=AliasChoices("LLM_MODEL_ID", "OPENAI_MODEL"))
+    llm_timeout: int = Field(default=60, ge=1, le=300)
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+
+    def get_cors_origins_list(self) -> list[str]:
+        return [value.strip() for value in self.cors_origins.split(",") if value.strip()]
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+def validate_config(settings: Settings | None = None) -> None:
+    from .errors import ConfigurationError
+    config = settings or get_settings()
+    if not (config.amap_api_key.get_secret_value().strip() and config.llm_api_key.get_secret_value().strip() and config.llm_model.strip()):
+        raise ConfigurationError()
+
