@@ -1,17 +1,19 @@
 """Typed, partial-failure-tolerant trip retrieval orchestration."""
 
 import asyncio
+import anyio
 from dataclasses import dataclass
 from typing import Protocol
 
 from ..models.schemas import POIInfo, WeatherInfo
-from .amap_service import AmapService, get_amap_service
+from .amap_service import get_amap_service
+from ..errors import AppError, NoCandidates, UpstreamTimeout
 from .constraint_service import TravelConstraints
 
 
 class MapRetriever(Protocol):
-    def search_poi(self, keywords: str, city: str, citylimit: bool = True) -> list[POIInfo]: ...
-    def get_weather(self, city: str) -> list[WeatherInfo]: ...
+    async def asearch_poi(self, keywords: str, city: str, citylimit: bool = True) -> list[POIInfo]: ...
+    async def aget_weather(self, city: str) -> list[WeatherInfo]: ...
 
 
 @dataclass(frozen=True)
@@ -31,33 +33,49 @@ class TripRetrievalResult:
 class TripRetrievalService:
     """Run independent searches concurrently while keeping individual failures visible."""
 
-    def __init__(self, map_service: MapRetriever | None = None) -> None:
+    def __init__(self, map_service: MapRetriever | None = None, *, timeout: float = 60) -> None:
         self._map_service = map_service or get_amap_service()
+        self._timeout = timeout
 
     async def retrieve(self, constraints: TravelConstraints) -> TripRetrievalResult:
-        keywords = tuple(dict.fromkeys(("景点", *constraints.preferences)))
+        keywords = tuple(dict.fromkeys(("景点", *constraints.must_visit, *constraints.preferences)))
         jobs = [
-            (f"attraction:{keyword}", asyncio.to_thread(self._map_service.search_poi, keyword, constraints.city))
-            for keyword in keywords
+            (f"attraction:{index}", lambda keyword=keyword: self._map_service.asearch_poi(keyword, constraints.city))
+            for index, keyword in enumerate(keywords)
         ]
         jobs.extend([
-            ("hotel", asyncio.to_thread(self._map_service.search_poi, str(constraints.accommodation), constraints.city)),
-            ("weather", asyncio.to_thread(self._map_service.get_weather, constraints.city)),
+            ("hotel", lambda: self._map_service.asearch_poi(str(constraints.accommodation), constraints.city)),
+            ("weather", lambda: self._map_service.aget_weather(constraints.city)),
         ])
-        results = await asyncio.gather(*(job for _, job in jobs), return_exceptions=True)
+        quota = asyncio.Semaphore(3)
+
+        async def run(job):
+            # Includes local queue time; expired tasks never start another tool call.
+            try:
+                with anyio.fail_after(self._timeout):
+                    async with quota:
+                        return await job()
+            except TimeoutError as exc:
+                raise UpstreamTimeout() from exc
+
+        results = await asyncio.gather(*(run(job) for _, job in jobs), return_exceptions=True)
         attractions: list[POIInfo] = []
         hotels: list[POIInfo] = []
         weather: list[WeatherInfo] = []
         warnings: list[RetrievalWarning] = []
         for (source, _), result in zip(jobs, results):
-            if isinstance(result, BaseException):
-                warnings.append(RetrievalWarning(source=source, code="UPSTREAM_ERROR"))
+            if isinstance(result, asyncio.CancelledError):
+                raise result
+            if isinstance(result, Exception):
+                warnings.append(RetrievalWarning(source=source, code=result.code if isinstance(result, AppError) else "UPSTREAM_ERROR"))
             elif source == "hotel":
                 hotels.extend(result)
             elif source == "weather":
                 weather.extend(result)
             else:
                 attractions.extend(result)
+        if not attractions:
+            raise NoCandidates()
         return TripRetrievalResult(
             attractions=self._dedupe(attractions), hotels=self._dedupe(hotels),
             weather=tuple(weather), warnings=tuple(warnings),

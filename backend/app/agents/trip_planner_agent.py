@@ -4,7 +4,6 @@ import json
 import logging
 from threading import Lock
 from hello_agents import SimpleAgent
-from hello_agents.tools import MCPTool
 from ..services.llm_service import get_llm
 from ..models.schemas import POIInfo, TripPlan, WeatherInfo
 from ..services.constraint_service import TravelConstraints
@@ -12,68 +11,6 @@ from ..errors import upstream_failure, AppError, ConfigurationError, PlanParseEr
 from ..config import get_settings
 
 # ============ Agent提示词 ============
-
-ATTRACTION_AGENT_PROMPT = """你是景点搜索专家。你的任务是根据城市和用户偏好搜索合适的景点。
-
-**重要提示:**
-你必须使用工具来搜索景点!不要自己编造景点信息!
-
-**工具调用格式:**
-使用maps_text_search工具时,必须严格按照以下格式:
-`[TOOL_CALL:amap_maps_text_search:keywords=景点关键词,city=城市名]`
-
-**示例:**
-用户: "搜索北京的历史文化景点"
-你的回复: [TOOL_CALL:amap_maps_text_search:keywords=历史文化,city=北京]
-
-用户: "搜索上海的公园"
-你的回复: [TOOL_CALL:amap_maps_text_search:keywords=公园,city=上海]
-
-**注意:**
-1. 必须使用工具,不要直接回答
-2. 格式必须完全正确,包括方括号和冒号
-3. 参数用逗号分隔
-"""
-
-WEATHER_AGENT_PROMPT = """你是天气查询专家。你的任务是查询指定城市的天气信息。
-
-**重要提示:**
-你必须使用工具来查询天气!不要自己编造天气信息!
-
-**工具调用格式:**
-使用maps_weather工具时,必须严格按照以下格式:
-`[TOOL_CALL:amap_maps_weather:city=城市名]`
-
-**示例:**
-用户: "查询北京天气"
-你的回复: [TOOL_CALL:amap_maps_weather:city=北京]
-
-用户: "上海的天气怎么样"
-你的回复: [TOOL_CALL:amap_maps_weather:city=上海]
-
-**注意:**
-1. 必须使用工具,不要直接回答
-2. 格式必须完全正确,包括方括号和冒号
-"""
-
-HOTEL_AGENT_PROMPT = """你是酒店推荐专家。你的任务是根据城市和景点位置推荐合适的酒店。
-
-**重要提示:**
-你必须使用工具来搜索酒店!不要自己编造酒店信息!
-
-**工具调用格式:**
-使用maps_text_search工具搜索酒店时,必须严格按照以下格式:
-`[TOOL_CALL:amap_maps_text_search:keywords=酒店,city=城市名]`
-
-**示例:**
-用户: "搜索北京的酒店"
-你的回复: [TOOL_CALL:amap_maps_text_search:keywords=酒店,city=北京]
-
-**注意:**
-1. 必须使用工具,不要直接回答
-2. 格式必须完全正确,包括方括号和冒号
-3. 关键词使用"酒店"或"宾馆"
-"""
 
 PLANNER_AGENT_PROMPT = """你是行程规划专家。你的任务是根据景点信息和天气信息,生成详细的旅行计划。
 
@@ -205,43 +142,14 @@ class MultiAgentTripPlanner:
                 self._run_lock.release()
 
     def plan_trip(self, request: TravelConstraints) -> TripPlan:
-        # Compatibility-only legacy entry point. Production requests use
-        # plan_from_retrieval after Phase 4 Service retrieval.
-        # Reject overlap instead of accumulating unbounded work behind a slow model.
-        if not self._run_lock.acquire(blocking=False):
-            raise ServiceBusy()
-        try:
-            self._clear_history()
-            logger.info("planning.started")
-            attractions = self.attraction_agent.run(self._build_attraction_query(request))
-            weather = self.weather_agent.run(f"请查询{request.city}的天气信息")
-            hotels = self.hotel_agent.run(f"请搜索{request.city}的{request.accommodation}酒店")
-            response = self.planner_agent.run(self._build_planner_query(request, attractions, weather, hotels))
-            plan = self._parse_response(response, request)
-            logger.info("planning.completed")
-            return plan
-        except AppError:
-            raise
-        except Exception as exc:
-            raise upstream_failure(exc) from exc
-        finally:
-            try:
-                self._clear_history()
-            finally:
-                self._run_lock.release()
-
-    def _build_attraction_query(self, request: TravelConstraints) -> str:
-        """构建景点搜索查询 - 直接包含工具调用"""
-        keywords = "景点"
-        if request.preferences:
-            # 只取第一个偏好作为关键词
-            keywords = request.preferences[0]
-        else:
-            keywords = "景点"
-
-        # 直接返回工具调用格式
-        query = f"请使用amap_maps_text_search工具搜索{request.city}的{keywords}相关景点。\n[TOOL_CALL:amap_maps_text_search:keywords={keywords},city={request.city}]"
-        return query
+        """Compatibility entry point delegates to the same retrieval Service."""
+        from ..services.retrieval_service import retrieve_trip_context
+        from ..services.constraint_service import build_travel_constraints
+        from ..models.schemas import TripRequest
+        if isinstance(request, TripRequest):
+            request = build_travel_constraints(request)
+        context = retrieve_trip_context(request)
+        return self.plan_from_retrieval(request, context.attractions, context.weather, context.hotels)
 
     def _build_planner_query(self, request: TravelConstraints, attractions: str, weather: str, hotels: str = "") -> str:
         """构建行程规划查询"""

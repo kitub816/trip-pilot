@@ -36,6 +36,24 @@ class ServiceBusy(AppError):
     code = "SERVICE_BUSY"
     message = "规划服务正在处理其他请求，请稍后重试"
 
+class ToolArgumentError(AppError):
+    status_code = 422
+    code = "TOOL_ARGUMENT_ERROR"
+    message = "工具参数不符合要求"
+
+class ToolProtocolError(UpstreamError):
+    code = "TOOL_PROTOCOL_ERROR"
+    message = "外部工具返回了无法识别的数据"
+
+class ToolRateLimit(UpstreamError):
+    code = "TOOL_RATE_LIMIT"
+    message = "外部工具请求过于频繁，请稍后重试"
+
+class NoCandidates(AppError):
+    status_code = 503
+    code = "NO_CANDIDATES"
+    message = "未获取到有效景点，暂时无法生成行程"
+
 
 def upstream_failure(exc: BaseException) -> UpstreamError | UpstreamTimeout:
     """SDK wrappers preserve cause/context; classify without reading error text."""

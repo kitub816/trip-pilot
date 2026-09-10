@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     llm_base_url: str = Field(default="https://api.openai.com/v1", validation_alias=AliasChoices("LLM_BASE_URL", "OPENAI_BASE_URL"))
     llm_model: str = Field(default="", validation_alias=AliasChoices("LLM_MODEL_ID", "OPENAI_MODEL"))
     llm_timeout: int = Field(default=60, ge=1, le=300)
+    tool_timeout: float = Field(default=20, gt=0, le=120)
+    tool_total_timeout: float = Field(default=50, gt=0, le=300)
+    tool_max_attempts: int = Field(default=2, ge=1, le=3)
+    tool_concurrency: int = Field(default=3, ge=1, le=8)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
     def get_cors_origins_list(self) -> list[str]:

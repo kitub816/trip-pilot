@@ -1,167 +1,165 @@
-"""Existing MCP mappings; unfinished parsers fail explicitly until Phase 4."""
-import json
-import re
+"""Typed Amap adapters backed by the bounded native MCP runtime."""
+import asyncio
+import math
+from datetime import date
 from threading import RLock
-from typing import Any
 
-from hello_agents.tools import MCPTool
-from ..config import get_settings
-from ..errors import upstream_failure, AppError, ConfigurationError, FeatureUnavailable, UpstreamError
-from ..models.schemas import Location, POIInfo, WeatherInfo
+from pydantic import JsonValue, ValidationError
 
-_service_lock = RLock()
-_tool_call_lock = RLock()
-_amap_mcp_tool: MCPTool | None = None
-_amap_service: "AmapService | None" = None
+from ..errors import AppError, ToolArgumentError, ToolProtocolError, UpstreamError
+from ..models.schemas import Location, POIInfo, RouteInfo, WeatherInfo
+from .tool_runtime import ToolRuntime, get_tool_runtime, parse_payload
 
 
-def get_amap_mcp_tool() -> MCPTool:
-    global _amap_mcp_tool
-    with _service_lock:
-        if _amap_mcp_tool is None:
-            settings = get_settings()
-            if not settings.amap_api_key.get_secret_value().strip():
-                raise ConfigurationError()
-            try:
-                tool = MCPTool(name="amap", description="高德地图服务",
-                    server_command=["uvx", "amap-mcp-server"],
-                    env={"AMAP_MAPS_API_KEY": settings.amap_api_key.get_secret_value()}, auto_expand=True)
-                if not tool.get_expanded_tools():
-                    raise UpstreamError()
-                _amap_mcp_tool = tool
-            except AppError:
-                raise
-            except Exception as exc:
-                raise upstream_failure(exc) from exc
-        return _amap_mcp_tool
+def records(payload: JsonValue, key: str) -> list[dict[str, JsonValue]]:
+    payload = parse_payload(payload)
+    if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
+        payload = parse_payload(payload["data"])
+    value = payload.get(key) if isinstance(payload, dict) else payload
+    if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
+        raise ToolProtocolError()
+    return value
+
+
+def location(value: JsonValue) -> Location:
+    if isinstance(value, str) and "," in value:
+        lng, lat = value.split(",", 1)
+    elif isinstance(value, dict):
+        lng, lat = value.get("longitude"), value.get("latitude")
+    else:
+        raise ToolProtocolError()
+    try:
+        lng, lat = float(lng), float(lat)
+        if not math.isfinite(lng) or not math.isfinite(lat) or not -180 <= lng <= 180 or not -90 <= lat <= 90:
+            raise ValueError()
+        return Location(longitude=lng, latitude=lat)
+    except (TypeError, ValueError) as exc:
+        raise ToolProtocolError() from exc
+
+
+def string(value: JsonValue) -> str:
+    # Amap sometimes uses [] for absent optional strings.
+    return value.strip() if isinstance(value, str) else ""
 
 
 class AmapService:
-    @property
-    def mcp_tool(self) -> MCPTool:
-        return get_amap_mcp_tool()
+    def __init__(self, runtime: ToolRuntime | None = None):
+        self.runtime = runtime or get_tool_runtime()
 
-    def _call_tool(self, tool_name: str, arguments: dict[str, str]) -> Any:
-        """Call the shared SDK wrapper serially until Tool Runtime owns sessions."""
-        try:
-            # MCPTool 0.2.9 has no documented concurrent-session guarantee.
-            with _tool_call_lock:
-                return self.mcp_tool.run({
-                    "action": "call_tool", "tool_name": tool_name, "arguments": arguments,
-                })
-        except AppError:
-            raise
-        except Exception as exc:
-            raise upstream_failure(exc) from exc
-
-    @staticmethod
-    def _json_payload(result: Any) -> dict[str, Any] | list[Any]:
-        if isinstance(result, (dict, list)):
-            return result
-        if not isinstance(result, str):
-            raise UpstreamError()
-        try:
-            return json.loads(result)
-        except json.JSONDecodeError:
-            match = re.search(r"```(?:json)?\\s*(\\{.*?\\}|\\[.*?\\])\\s*```", result, re.DOTALL)
-            if match is None:
-                match = re.search(r"(\\{.*\\}|\\[.*\\])", result, re.DOTALL)
-            if match is None:
-                raise UpstreamError()
-            try:
-                return json.loads(match.group(1))
-            except json.JSONDecodeError as exc:
-                raise UpstreamError() from exc
-
-    @staticmethod
-    def _records(payload: dict[str, Any] | list[Any], *keys: str) -> list[dict[str, Any]]:
-        candidate: Any = payload
-        if isinstance(candidate, dict) and isinstance(candidate.get("data"), dict):
-            candidate = candidate["data"]
-        if isinstance(candidate, dict):
-            for key in keys:
-                if isinstance(candidate.get(key), list):
-                    candidate = candidate[key]
-                    break
-        if not isinstance(candidate, list):
-            return []
-        return [item for item in candidate if isinstance(item, dict)]
-
-    @staticmethod
-    def _location(value: Any) -> Location | None:
-        if isinstance(value, dict):
-            longitude, latitude = value.get("longitude"), value.get("latitude")
-        elif isinstance(value, str) and "," in value:
-            longitude, latitude = value.split(",", 1)
-        else:
-            return None
-        try:
-            return Location(longitude=float(longitude), latitude=float(latitude))
-        except (TypeError, ValueError):
-            return None
-
-    def search_poi(self, keywords: str, city: str, citylimit: bool = True) -> list[POIInfo]:
-        payload = self._json_payload(self._call_tool("maps_text_search", {
-            "keywords": keywords, "city": city, "citylimit": str(citylimit).lower()}))
+    async def asearch_poi(self, keywords: str, city: str, citylimit: bool = True) -> list[POIInfo]:
+        result = await self.runtime.call("maps_text_search", {
+            "keywords": keywords, "city": city, "citylimit": str(citylimit).lower()})
+        items = records(result.payload, "pois")
         pois: list[POIInfo] = []
-        for item in self._records(payload, "pois"):
-            location = self._location(item.get("location"))
-            name = item.get("name")
-            if not location or not isinstance(name, str) or not name.strip():
+        # 0.1.11 omits coordinates from search. Hydrate at most six unique IDs per search.
+        seen: set[str] = set()
+        for item in items:
+            poi_id = string(item.get("id"))
+            if not poi_id or poi_id in seen:
                 continue
-            pois.append(POIInfo(
-                id=str(item.get("id") or item.get("poi_id") or ""), name=name.strip(),
-                type=str(item.get("type") or item.get("typecode") or ""),
-                address=str(item.get("address") or ""), location=location,
-                tel=str(item["tel"]) if item.get("tel") else None,
-            ))
+            if len(seen) == 6:
+                break
+            seen.add(poi_id)
+            try:
+                if not item.get("location"):
+                    item = await self.aget_poi_detail(poi_id)
+                name = string(item.get("name"))
+                if not name:
+                    raise ToolProtocolError()
+                pois.append(POIInfo(id=poi_id, name=name, address=string(item.get("address")),
+                    type=string(item.get("type") or item.get("typecode")),
+                    location=location(item.get("location")), tel=string(item.get("tel")) or None))
+            except AppError:
+                # Individual bad details cannot discard valid candidates already retrieved.
+                continue
+        if items and not pois:
+            raise ToolProtocolError()
         return pois
 
-    def get_weather(self, city: str) -> list[WeatherInfo]:
-        payload = self._json_payload(self._call_tool("maps_weather", {"city": city}))
-        forecasts = self._records(payload, "forecasts")
-        casts = forecasts[0].get("casts", []) if forecasts else self._records(payload, "casts")
-        if not isinstance(casts, list):
-            return []
-        return [WeatherInfo(
-            date=str(item.get("date") or ""),
-            day_weather=str(item.get("dayweather") or item.get("day_weather") or ""),
-            night_weather=str(item.get("nightweather") or item.get("night_weather") or ""),
-            day_temp=item.get("daytemp") or item.get("day_temp") or 0,
-            night_temp=item.get("nighttemp") or item.get("night_temp") or 0,
-            wind_direction=str(item.get("daywind") or item.get("wind_direction") or ""),
-            wind_power=str(item.get("daypower") or item.get("wind_power") or ""),
-        ) for item in casts if isinstance(item, dict)]
+    async def aget_weather(self, city: str) -> list[WeatherInfo]:
+        result = await self.runtime.call("maps_weather", {"city": city})
+        rows = records(result.payload, "forecasts")
+        # Accept both server 0.1.11 and direct Amap REST fixture envelopes.
+        if rows and "casts" in rows[0]:
+            rows = records(rows[0], "casts")
+        weather: list[WeatherInfo] = []
+        try:
+            for row in rows:
+                day = date.fromisoformat(string(row.get("date")))
+                weather.append(WeatherInfo(date=str(day),
+                    day_weather=string(row.get("dayweather")), night_weather=string(row.get("nightweather")),
+                    day_temp=int(row["daytemp"]), night_temp=int(row["nighttemp"]),
+                    wind_direction=string(row.get("daywind")), wind_power=string(row.get("daypower"))))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ToolProtocolError() from exc
+        return weather
 
-    def plan_route(self, origin_address: str, destination_address: str,
-                   origin_city: str | None = None, destination_city: str | None = None,
-                   route_type: str = "walking") -> dict[str, Any]:
+    async def aget_poi_detail(self, poi_id: str) -> dict[str, JsonValue]:
+        result = await self.runtime.call("maps_search_detail", {"id": poi_id})
+        data = parse_payload(result.payload)
+        if not isinstance(data, dict) or string(data.get("id")) != poi_id or not string(data.get("name")):
+            raise ToolProtocolError()
+        return data
+
+    async def ageocode(self, address: str, city: str | None = None) -> Location | None:
+        arguments = {"address": address}
+        if city is not None:
+            arguments["city"] = city
+        result = await self.runtime.call("maps_geo", arguments)
+        rows = records(result.payload, "return")
+        return location(rows[0].get("location")) if rows else None
+
+    async def aplan_route(self, origin_address: str, destination_address: str,
+                         origin_city: str | None = None, destination_city: str | None = None,
+                         route_type: str = "walking") -> RouteInfo:
         tool_map = {"walking": "maps_direction_walking_by_address",
                     "driving": "maps_direction_driving_by_address",
                     "transit": "maps_direction_transit_integrated_by_address"}
+        if route_type not in tool_map or (route_type == "transit" and not (origin_city and destination_city)):
+            raise ToolArgumentError()
         arguments = {"origin_address": origin_address, "destination_address": destination_address}
-        if origin_city:
+        if origin_city is not None:
             arguments["origin_city"] = origin_city
-        if destination_city:
+        if destination_city is not None:
             arguments["destination_city"] = destination_city
-        raise FeatureUnavailable()
+        result = await self.runtime.call(tool_map[route_type], arguments)
+        data = parse_payload(result.payload)
+        if not isinstance(data, dict) or not isinstance(data.get("route"), dict):
+            raise ToolProtocolError()
+        route = data["route"]
+        paths = records(route, "transits" if route_type == "transit" else "paths")
+        if not paths:
+            raise UpstreamError()
+        try:
+            choices = [RouteInfo(distance=float(path.get("distance", route.get("distance"))),
+                        duration=int(path["duration"]), route_type=route_type, description="高德路线") for path in paths]
+            if any(not math.isfinite(p.distance) or p.distance < 0 or p.duration < 0 for p in choices):
+                raise ValueError()
+        except (KeyError, TypeError, ValueError, ValidationError) as exc:
+            raise ToolProtocolError() from exc
+        return min(choices, key=lambda path: (path.duration, path.distance))
+
+    # Compatibility for synchronous map API workers. Retrieval uses the async methods.
+    def search_poi(self, keywords: str, city: str, citylimit: bool = True) -> list[POIInfo]:
+        return asyncio.run(self.asearch_poi(keywords, city, citylimit))
+
+    def get_weather(self, city: str) -> list[WeatherInfo]:
+        return asyncio.run(self.aget_weather(city))
+
+    def get_poi_detail(self, poi_id: str) -> dict[str, JsonValue]:
+        return asyncio.run(self.aget_poi_detail(poi_id))
 
     def geocode(self, address: str, city: str | None = None) -> Location | None:
-        arguments = {"address": address}
-        if city:
-            arguments["city"] = city
-        raise FeatureUnavailable()
+        return asyncio.run(self.ageocode(address, city))
 
-    def get_poi_detail(self, poi_id: str) -> dict[str, Any]:
-        try:
-            data = self._json_payload(self._call_tool("maps_search_detail", {"id": poi_id}))
-            if not isinstance(data, dict) or not data or data.get("error") or data.get("status") in (0, "0"):
-                raise UpstreamError()
-            return data
-        except AppError:
-            raise
-        except Exception as exc:
-            raise upstream_failure(exc) from exc
+    def plan_route(self, origin_address: str, destination_address: str,
+                   origin_city: str | None = None, destination_city: str | None = None,
+                   route_type: str = "walking") -> RouteInfo:
+        return asyncio.run(self.aplan_route(origin_address, destination_address, origin_city, destination_city, route_type))
+
+
+_service_lock = RLock()
+_amap_service: AmapService | None = None
 
 
 def get_amap_service() -> AmapService:
@@ -173,8 +171,6 @@ def get_amap_service() -> AmapService:
 
 
 def reset_amap_service() -> None:
-    """SDK MCPClient contexts close per operation; reset only cached wrappers."""
-    global _amap_service, _amap_mcp_tool
+    global _amap_service
     with _service_lock:
         _amap_service = None
-        _amap_mcp_tool = None

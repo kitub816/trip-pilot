@@ -114,9 +114,8 @@ def test_map_search_and_weather_routes_use_service(client, monkeypatch):
 
 
 def test_unimplemented_route(client, monkeypatch):
-    monkeypatch.setattr(amap_service, "MCPTool", Mock(side_effect=AssertionError("must not call MCP")))
-    response = client.post("/api/map/route", json={"origin_address":"a","destination_address":"b"})
-    assert response.status_code == 503
+    response = client.post("/api/map/route", json={"origin_address":"a","destination_address":"b","route_type":"invalid"})
+    assert response.status_code == 422
 
 
 @pytest.mark.parametrize("response", ["not json", "```json\n{}", "{}", "null"])
@@ -135,21 +134,21 @@ def make_planner():
         return json.dumps(PLAN)
     llm = SimpleNamespace(invoke=invoke)
     # Real SDK history behavior, no tools/network; verify our lifecycle isolation.
-    for name in ("attraction_agent", "weather_agent", "hotel_agent", "planner_agent"):
+    for name in ("planner_agent",):
         setattr(planner, name, SimpleAgent(name=name, llm=llm, system_prompt="test"))
     return planner, calls
 
 
 def test_history_isolated_between_requests_and_cleared_on_failure():
     planner, calls = make_planner()
-    planner.plan_trip(TripRequest(**REQUEST))
-    planner.plan_trip(TripRequest(**{**REQUEST, "city":"北京"}))
-    assert len(calls) == 8 and all(len(messages) == 2 for messages in calls)
-    assert all(agent._history == [] for agent in (planner.attraction_agent,planner.weather_agent,planner.hotel_agent,planner.planner_agent))
-    planner.weather_agent.run = Mock(side_effect=RuntimeError("secret"))
+    planner.plan_from_retrieval(TripRequest(**REQUEST), (), (), ())
+    planner.plan_from_retrieval(TripRequest(**{**REQUEST, "city":"北京"}), (), (), ())
+    assert len(calls) == 2 and all(len(messages) == 2 for messages in calls)
+    assert all(agent._history == [] for agent in (planner.planner_agent,))
+    planner.planner_agent.run = Mock(side_effect=RuntimeError("secret"))
     with pytest.raises(UpstreamError):
-        planner.plan_trip(TripRequest(**REQUEST))
-    assert planner.attraction_agent._history == []
+        planner.plan_from_retrieval(TripRequest(**REQUEST), (), (), ())
+    assert planner.planner_agent._history == []
     assert planner._run_lock.acquire(blocking=False)
     planner._run_lock.release()
 
@@ -157,18 +156,18 @@ def test_history_isolated_between_requests_and_cleared_on_failure():
 def test_overlapping_plan_is_rejected_and_lock_recovers():
     planner, calls = make_planner()
     started, release = Event(), Event()
-    original = planner.attraction_agent.run
+    original = planner.planner_agent.run
     def blocked(query):
         started.set()
         assert release.wait(5)
         return original(query)
-    planner.attraction_agent.run = blocked
+    planner.planner_agent.run = blocked
     with ThreadPoolExecutor(max_workers=1) as pool:
-        pending = pool.submit(planner.plan_trip, TripRequest(**REQUEST))
+        pending = pool.submit(planner.plan_from_retrieval, TripRequest(**REQUEST), (), (), ())
         try:
             assert started.wait(3)
             with pytest.raises(ServiceBusy):
-                planner.plan_trip(TripRequest(**REQUEST))
+                planner.plan_from_retrieval(TripRequest(**REQUEST), (), (), ())
         finally:
             release.set()
         assert pending.result(timeout=5).city == "上海"
@@ -261,28 +260,21 @@ def test_sdk_wrapped_timeout_is_classified():
             raise httpx.ReadTimeout("secret-url")
         except httpx.ReadTimeout:
             raise RuntimeError("SDK wrapper: secret-url")
-    planner.weather_agent.run = fail
+    planner.planner_agent.run = fail
     with pytest.raises(UpstreamTimeout):
-        planner.plan_trip(TripRequest(**REQUEST))
-    assert planner.attraction_agent._history == []
+        planner.plan_from_retrieval(TripRequest(**REQUEST), (), (), ())
+    assert planner.planner_agent._history == []
 
 
 def test_poi_invalid_upstream_data_is_not_success(client, monkeypatch):
-    monkeypatch.setattr(amap_service, "get_amap_mcp_tool", lambda: SimpleNamespace(run=lambda params: "upstream failed: secret"))
+    from app.errors import ToolProtocolError
+    class BadRuntime:
+        async def call(self, name, arguments):
+            raise ToolProtocolError()
+    monkeypatch.setattr(poi, "get_amap_service", lambda: amap_service.AmapService(BadRuntime()))
     response = client.get("/api/poi/detail/test")
     assert response.status_code == 502
-    assert response.json()["error_code"] == "UPSTREAM_ERROR"
-    assert "secret" not in response.text
-
-
-def test_map_discovery_failure_not_cached(monkeypatch):
-    monkeypatch.setattr(amap_service, "_amap_mcp_tool", None)
-    constructor = Mock(return_value=SimpleNamespace(get_expanded_tools=lambda: []))
-    monkeypatch.setattr(amap_service, "MCPTool", constructor)
-    for _ in range(2):
-        with pytest.raises(UpstreamError):
-            amap_service.get_amap_mcp_tool()
-    assert constructor.call_count == 2
+    assert response.json()["error_code"] == "TOOL_PROTOCOL_ERROR"
 
 
 def test_missing_image_key_returns_configuration_error(client, monkeypatch):
