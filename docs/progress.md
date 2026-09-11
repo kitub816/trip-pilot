@@ -30,7 +30,7 @@ Phase 0–7 已实现，Phase 8–18 待完成。用户已授权逐阶段继续�
 | 4 | [检索 Service](phase4.md)，提交 19a0d3b；本次复核发现原测试未覆盖真实返回格式，缺口已在 Phase 5 修补 |
 | 5 | [Tool Runtime](phase5.md)，包括 Phase 4 缺口修补 |
 | 6 | [Redis 类型化检索缓存](phase6.md)，提交 a48b78c |
-| 7 | [MySQL 计划持久化](phase7.md)，提交待验证后记录 |
+| 7 | [MySQL 计划持久化](phase7.md)，提交 85d01e1 |
 
 ## Phase 7 修改
 
