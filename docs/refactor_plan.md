@@ -1,6 +1,6 @@
 # TripPilot 渐进重构计划
 
-本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–6 已完成；Phase 7–18 为待办。实际范围、验证与限制见 [progress.md](progress.md)。
+本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–7 已完成；Phase 8–18 为待办。实际范围、验证与限制见 [progress.md](progress.md)。
 
 ## 迁移原则与落点
 
@@ -18,7 +18,7 @@
 | 4 检索与 asyncio（缺口在 Phase 5 补齐） | POI/天气/详情/geocode/路线按服务源码格式解析；异步 Service 取代检索 Agent | 真实响应形状、并发重叠、超时部分失败测试通过；无候选终止，不伪造坐标 |
 | 5 Tool Runtime（已完成） | 原生 MCP 独立会话；参数/schema 校验、单次和总超时、有界重试、全局配额和 provenance；关闭时清理 | 84 项回归通过，包括真实本地 stdio 子进程超时退出；HTTP 断开和同步 LLM 取消仍有限制 |
 | 6 Redis（已完成） | Amap 类型化结果边界接入可选 Redis；版本化规范参数哈希键，POI/geocode 24h、路线 30m、天气 10m，缓存 envelope 与二次 Pydantic 校验 | 命中、过期、参数隔离、损坏值、取消与断连回源测试；真实一次性 Redis 容器验证读写和 TTL；未缓存完整 Prompt、state 或 LLM 结果 |
-| 7 MySQL | 保存计划、请求状态和版本，取代只靠 sessionStorage 的结果来源；工作流 checkpoint 采用匹配的持久化适配方案 | 保存再读、版本冲突、重启恢复测试；明确计划存储与 checkpoint 的边界 |
+| 7 MySQL（已完成） | SQLAlchemy + PyMySQL 保存请求、计划、状态和乐观锁版本；提供 GET/PUT；业务计划记录与 LangGraph checkpoint 分离 | SQLite 文件重启与真实 MySQL 8.4 容器验证；前端切换、Alembic、鉴权和中断工作流恢复尚未完成 |
 | 8 Budget Engine | 从 Attraction.ticket_price、Hotel/Meal.estimated_cost 生成费用明细与 Budget；补交通项、人数、实际住宿夜数、币种及未知价格状态 | 汇总一致、非负、预算临界值、未知费用、末日不住宿等测试；LLM 输出 total 不能覆盖代码结果 |
 | 9 Route Optimizer | 复用 AmapService 路线工具映射和 Location；标准化 RouteInfo，构建有界路线矩阵，按交通方式确定性排序与时间计算 | 固定矩阵可复现顺序，处理不可达/缺路段；限制步行和交通时间；前端折线不作为真实路网证据 |
 | 10 Structured Planner | 改造 PLANNER_AGENT_PROMPT、_build_planner_query 和 _parse_response；模型从候选 ID 中选择，结果按 schema 返回；预算字段由代码补算 | 非法 JSON、未知 POI ID、越界日期被拒绝；有界格式修复；不恢复虚构 fallback；保留现有响应字段适配 |
@@ -39,6 +39,6 @@
 4. 输入无硬约束、输出无真实来源：先定义模型再建预算/路线/Validator，不能让模型输出金额充当预算引擎。
 5. Git 已初始化并有基线提交；每个后续阶段继续以真实 diff 和测试结果更新进度。
 
-## 下一阶段执行清单（Phase 7）
+## 下一阶段执行清单（Phase 8）
 
-设计 MySQL 的计划、请求状态和版本模型，在 API 与工作流间明确保存边界；补保存、读取、版本冲突和重启恢复验证，再评估匹配当前 LangGraph 版本的 checkpoint 适配方案。
+实现确定性 Budget Engine，按人数、住宿夜数和费用类别从 TripPlan 明细重新计算 Budget；表示未知费用，拒绝负数和不一致汇总，并在 API 返回前覆盖 LLM 自报总价。

@@ -1,9 +1,16 @@
 """Trip API; synchronous SDK calls run in FastAPI's worker pool."""
 from fastapi import APIRouter
-from ...models.schemas import TripRequest, TripPlanResponse
+from ...errors import AppError, PersistenceUnavailable
+from ...models.schemas import (
+    StoredTripPlanResponse,
+    TripPlanResponse,
+    TripPlanUpdateRequest,
+    TripRequest,
+)
 from ...agents.trip_planner_agent import get_trip_planner_agent
 from ...config import validate_config
 from ...services.constraint_service import build_travel_constraints
+from ...services.persistence_service import PlanStore, StoredTripPlan, get_plan_store
 from ...workflows.trip_workflow import TripPlanningWorkflow
 
 router = APIRouter(prefix="/trip", tags=["旅行规划"])
@@ -16,8 +23,59 @@ def get_trip_workflow() -> TripPlanningWorkflow:
 @router.post("/plan", response_model=TripPlanResponse, summary="生成旅行计划")
 def plan_trip(request: TripRequest):
     constraints = build_travel_constraints(request)
-    plan = get_trip_workflow().plan(constraints)
-    return TripPlanResponse(success=True, message="旅行计划生成成功", data=plan)
+    store = get_plan_store()
+    record = store.start(request) if store is not None else None
+    try:
+        plan = get_trip_workflow().plan(constraints)
+    except AppError as error:
+        if store is not None and record is not None:
+            store.fail(record.plan_id, error.code, record.version)
+        raise
+    except Exception:
+        if store is not None and record is not None:
+            store.fail(record.plan_id, "INTERNAL_ERROR", record.version)
+        raise
+    if store is not None and record is not None:
+        record = store.complete(record.plan_id, plan, record.version)
+    return TripPlanResponse(
+        success=True,
+        message="旅行计划生成成功",
+        data=plan,
+        plan_id=record.plan_id if record else None,
+        version=record.version if record else None,
+    )
+
+
+def _response(record: StoredTripPlan, message: str) -> StoredTripPlanResponse:
+    return StoredTripPlanResponse(
+        message=message,
+        plan_id=record.plan_id,
+        status=record.status,
+        version=record.version,
+        request=record.request,
+        data=record.plan,
+        error_code=record.error_code,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+def _required_store() -> PlanStore:
+    store = get_plan_store()
+    if store is None:
+        raise PersistenceUnavailable()
+    return store
+
+
+@router.get("/plans/{plan_id}", response_model=StoredTripPlanResponse, summary="读取旅行计划")
+def get_plan(plan_id: str):
+    return _response(_required_store().get(plan_id), "旅行计划读取成功")
+
+
+@router.put("/plans/{plan_id}", response_model=StoredTripPlanResponse, summary="更新旅行计划")
+def update_plan(plan_id: str, request: TripPlanUpdateRequest):
+    record = _required_store().replace(plan_id, request.data, request.expected_version)
+    return _response(record, "旅行计划更新成功")
 
 @router.get("/health", summary="规划配置检查（不调用外部服务）")
 def health_check():

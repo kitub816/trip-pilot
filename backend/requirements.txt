@@ -5,6 +5,8 @@ mcp==1.29.1
 anyio>=4.8,<5
 jsonschema>=4.20,<5
 redis==5.3.1
+SQLAlchemy>=2.0,<2.1
+PyMySQL>=1.1,<2
 
 # FastAPI和相关依赖
 fastapi>=0.115.0

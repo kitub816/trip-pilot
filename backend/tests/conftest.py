@@ -13,6 +13,7 @@ def offline_settings(monkeypatch):
     monkeypatch.setenv("LLM_MODEL_ID", "test-model")
     monkeypatch.setenv("AMAP_API_KEY", "test-map-secret")
     monkeypatch.delenv("REDIS_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     get_settings.cache_clear()
     original_connect = socket.socket.connect
     def deny_network(sock, address):

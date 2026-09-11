@@ -55,6 +55,24 @@ class NoCandidates(AppError):
     message = "未获取到有效景点，暂时无法生成行程"
 
 
+class PersistenceUnavailable(AppError):
+    status_code = 503
+    code = "PERSISTENCE_UNAVAILABLE"
+    message = "计划存储暂时不可用，请稍后重试"
+
+
+class PlanNotFound(AppError):
+    status_code = 404
+    code = "PLAN_NOT_FOUND"
+    message = "未找到指定旅行计划"
+
+
+class PlanVersionConflict(AppError):
+    status_code = 409
+    code = "PLAN_VERSION_CONFLICT"
+    message = "旅行计划已被更新，请刷新后重试"
+
+
 def upstream_failure(exc: BaseException) -> UpstreamError | UpstreamTimeout:
     """SDK wrappers preserve cause/context; classify without reading error text."""
     from httpx import TimeoutException

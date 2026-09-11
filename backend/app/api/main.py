@@ -18,6 +18,7 @@ from ..agents.trip_planner_agent import reset_trip_planner
 from ..services.amap_service import reset_amap_service
 from ..services.llm_service import reset_llm
 from ..services.tool_runtime import reset_tool_runtime
+from ..services.persistence_service import reset_plan_store
 from .routes import trip, poi, map as map_routes
 
 logger = logging.getLogger("trippilot.api")
@@ -25,7 +26,7 @@ logger = logging.getLogger("trippilot.api")
 
 def close_resources() -> None:
     # Attempt every cleanup even if one dependency's close fails.
-    for cleanup in (reset_trip_planner, reset_amap_service, reset_tool_runtime, reset_llm):
+    for cleanup in (reset_trip_planner, reset_amap_service, reset_tool_runtime, reset_plan_store, reset_llm):
         try:
             cleanup()
         except Exception:

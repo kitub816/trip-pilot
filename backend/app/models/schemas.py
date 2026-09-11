@@ -1,9 +1,9 @@
 """数据模型定义"""
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import List, Optional, Union
+from typing import List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -207,6 +207,28 @@ class TripPlanResponse(BaseModel):
     success: bool = Field(..., description="是否成功")
     message: str = Field(default="", description="消息")
     data: Optional[TripPlan] = Field(default=None, description="旅行计划数据")
+    plan_id: Optional[str] = Field(default=None, description="持久化计划ID")
+    version: Optional[int] = Field(default=None, ge=1, description="持久化版本")
+
+
+class TripPlanUpdateRequest(BaseModel):
+    """Optimistic update: the caller must provide the version it read."""
+
+    expected_version: int = Field(ge=1)
+    data: TripPlan
+
+
+class StoredTripPlanResponse(BaseModel):
+    success: bool = True
+    message: str = ""
+    plan_id: str
+    status: Literal["planning", "completed", "failed"]
+    version: int = Field(ge=1)
+    request: TripRequest
+    data: Optional[TripPlan] = None
+    error_code: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class POIInfo(BaseModel):
