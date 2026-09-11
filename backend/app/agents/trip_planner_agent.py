@@ -48,6 +48,7 @@ PLANNER_AGENT_PROMPT = """你是行程规划专家。你的任务是根据景点
           "ticket_price": 60
         }
       ],
+      "transportation_cost": 30,
       "meals": [
         {"type": "breakfast", "name": "早餐推荐", "description": "早餐描述", "estimated_cost": 30},
         {"type": "lunch", "name": "午餐推荐", "description": "午餐描述", "estimated_cost": 50},
@@ -66,14 +67,7 @@ PLANNER_AGENT_PROMPT = """你是行程规划专家。你的任务是根据景点
       "wind_power": "1-3级"
     }
   ],
-  "overall_suggestions": "总体建议",
-  "budget": {
-    "total_attractions": 180,
-    "total_hotels": 1200,
-    "total_meals": 480,
-    "total_transportation": 200,
-    "total": 2060
-  }
+  "overall_suggestions": "总体建议"
 }
 ```
 
@@ -84,11 +78,8 @@ PLANNER_AGENT_PROMPT = """你是行程规划专家。你的任务是根据景点
 4. 考虑景点之间的距离和游览时间
 5. 每天必须包含早中晚三餐
 6. 提供实用的旅行建议
-7. **必须包含预算信息**:
-   - 景点门票价格(ticket_price)
-   - 餐饮预估费用(estimated_cost)
-   - 酒店预估费用(estimated_cost)
-   - 预算汇总(budget)包含各项总费用
+7. 为景点、餐饮、酒店和每日交通填写单价；无法确认时使用null，不要猜测
+8. 不要汇总budget，服务端会按人数和住宿夜数确定性计算
 """
 
 

@@ -4,17 +4,18 @@
 
 ## 当前阶段
 
-Phase 0–7 已实现，Phase 8–18 待完成。用户已授权逐阶段继续到最终阶段；每阶段独立验证、提交并归档文档。
+Phase 0–8 已实现，Phase 9–18 待完成。用户已授权逐阶段继续到最终阶段；每阶段独立验证、提交并归档文档。
 
 ## 当前架构
 
-`FastAPI 同步工作线程 → TravelConstraints → LangGraph → TripRetrievalService → AmapService → 类型化 RetrievalCache（可选 Redis）→ ToolRuntime → 原生 MCP stdio 会话`，随后一个 Planner LLM 生成计划；配置数据库后，PlanStore 持久化请求、状态、计划和版本。请求级图 state 不作 checkpoint，Planner 仍用进程内互斥和历史清理。
+`FastAPI 同步工作线程 → TravelConstraints → LangGraph(plan → deterministic budget) → TripRetrievalService → AmapService → 类型化 RetrievalCache（可选 Redis）→ ToolRuntime → 原生 MCP stdio 会话`。Planner LLM 生成日程与单价线索，BudgetEngine 按人数和夜数覆盖预算汇总；配置数据库后，PlanStore 持久化最终计划。请求级图 state 不作 checkpoint，Planner 仍用进程内互斥和历史清理。
 
 - 约束：日期、人数、CNY 预算上限、必去/避开、步行及单段交通上限已结构化；自由文本提取只有合并边界，尚无提取器。
 - 工具：本地 Pydantic 参数白名单 + 发现的工具 schema；每次尝试独立会话；默认 20 秒单次/50 秒总截止时间、最多 2 次尝试、每进程 3 个并发槽。只重试明确超时或结构化限流。
 - 检索：最多 3 个并发任务，单任务含排队 60 秒截止时间，覆盖偏好和必去，POI 按 ID 去重，每个搜索最多补查 6 个详情。无有效景点明确终止。
 - 缓存：只保存已验证的 POI、天气、geocode、路线类型结果；键含协议版本、操作和规范化参数哈希。POI/geocode 24 小时、路线 30 分钟、天气 10 分钟；Redis 不可用或值损坏时回源。
 - 持久化：可选 MySQL 保存请求、`planning/completed/failed` 状态、计划 JSON 和乐观锁版本；提供 GET/PUT，数据库关闭时旧 POST 保持兼容。
+- 预算：门票、餐饮和交通按人数计算，酒店按两人一间及 `天数-1` 夜计算；0 与未知 null 分离，输出 unknown_items、完整性和预算上限三态。
 - 地图：按本地缓存的 amap-mcp-server 0.1.11 源码解析搜索、详情、天气、地理编码和路线；生产固定该版本。搜索不含坐标，详情提供坐标；路线结果有距离和时间，无前端路网折线。
 - 安全：API 错误不含原文；MCP 子进程 stderr 不外传，MCP transport 日志只保留安全事件；健康检查不访问外部依赖。
 - 生命周期：会话及子进程由 async context 关闭；ASGI 停机清理 runtime、服务和 Planner/LLM 引用。
@@ -31,6 +32,11 @@ Phase 0–7 已实现，Phase 8–18 待完成。用户已授权逐阶段继续�
 | 5 | [Tool Runtime](phase5.md)，包括 Phase 4 缺口修补 |
 | 6 | [Redis 类型化检索缓存](phase6.md)，提交 a48b78c |
 | 7 | [MySQL 计划持久化](phase7.md)，提交 85d01e1 |
+| 8 | [确定性 Budget Engine](phase8.md)，提交待验证后记录 |
+
+## Phase 8 修改
+
+新增 `BudgetEngine` 和 LangGraph budget 节点；成本字段改为非负可空语义，新增每日交通成本、房间/夜数、未知费用及预算上限状态。Planner 不再负责汇总，创建和更新计划都会由服务端重算并覆盖 LLM/客户端总价。
 
 ## Phase 7 修改
 
@@ -48,7 +54,7 @@ Phase 0–7 已实现，Phase 8–18 待完成。用户已授权逐阶段继续�
 
 ## 实际验证
 
-`backend: python -m pytest tests -q`：**103 passed，2 skipped，10 warnings**。
+`backend: python -m pytest tests -q`：**111 passed，2 skipped，10 warnings**。
 
 真实 MySQL 8.4 一次性容器验证：`tests/test_phase7_persistence.py` **7 passed，10 warnings**；容器已删除。真实 Redis 阶段验证仍见 Phase 6 记录。
 `git diff --check`：通过。
@@ -61,13 +67,14 @@ Phase 0–7 已实现，Phase 8–18 待完成。用户已授权逐阶段继续�
 
 - 高德 MCP 0.1.11 会把部分错误压成文字，无法可靠区分这些错误的限流/可重试性；运行时保守不重试这类错误。
 - 截止时间触发后仍需执行 SDK 的进程清理，实际返回可多出清理时间。当前 HTTP 同步路由不会在客户端断开时自动取消；原生检索协程本身已支持取消。
-- Planner LLM 仍是同步 HelloAgents 调用，共享实例仍拒绝重叠规划；LLM 总预算、结构化输出、预算及约束最终验证待后续阶段。
+- Planner LLM 仍是同步 HelloAgents 调用，共享实例仍拒绝重叠规划；预算汇总已移出 LLM，结构化候选选择和最终约束验证待后续阶段。
 - ToolResult 提供工具名、抓取时间、尝试次数和耗时；候选级引用和跨节点指标尚未接入。
 - Redis 已作为可选检索缓存接入；MySQL 已提供可选计划记录，前端尚未改为服务端读取；尚无 RAG/持久 checkpoint/部署与线上评测，不可宣称行程已通过硬约束验证。
 - MySQL 当前使用 `create_all`，没有 Alembic、鉴权、所有权或中断工作流恢复；`planning` 只用于识别未完成请求。
+- 预算单价尚无可靠证据；房间容量固定为 2，交通尚未按路线段生成，前端还未展示未知费用状态。
 - 缓存没有 single-flight、主动失效、预热或命中率指标；未在真实负载上测量延迟与成本收益。
 - 子进程级并发已由离线 MCP 测试验证；真实地图服务仍需联网验收。依赖弃用警告和前端大包警告尚存。
 
 ## 下一阶段
 
-Phase 8：实现确定性 Budget Engine，从计划明细按人数和住宿夜数计算费用，并明确未知价格。
+Phase 9：实现确定性 Route Optimizer，构建有界路线矩阵并处理不可达、交通方式和时间上限。

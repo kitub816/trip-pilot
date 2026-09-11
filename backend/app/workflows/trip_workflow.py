@@ -8,6 +8,7 @@ from ..agents.trip_planner_agent import MultiAgentTripPlanner, get_trip_planner_
 from ..errors import AppError, upstream_failure
 from ..models.schemas import TripPlan
 from ..services.constraint_service import TravelConstraints
+from ..services.budget_service import BudgetEngine, get_budget_engine
 from ..services.retrieval_service import TripRetrievalResult, retrieve_trip_context
 
 
@@ -15,7 +16,7 @@ class TripWorkflowState(TypedDict):
     """All state for one planning request; it is never retained between runs."""
 
     constraints: TravelConstraints
-    status: Literal["planning", "completed", "failed"]
+    status: Literal["planning", "budgeting", "completed", "failed"]
     plan: TripPlan | None
     error: AppError | None
     retrieval: TripRetrievalResult | None
@@ -27,15 +28,19 @@ PlannerFactory = Callable[[], MultiAgentTripPlanner]
 class TripPlanningWorkflow:
     """Minimal graph that isolates orchestration from transport and agents."""
 
-    def __init__(self, planner_factory: PlannerFactory = get_trip_planner_agent) -> None:
+    def __init__(self, planner_factory: PlannerFactory = get_trip_planner_agent,
+                 budget_engine: BudgetEngine | None = None) -> None:
         self._planner_factory = planner_factory
+        self._budget_engine = budget_engine or get_budget_engine()
         graph = StateGraph(TripWorkflowState)
         graph.add_node("plan", self._plan)
+        graph.add_node("budget", self._budget)
         graph.add_node("failure", self._record_failure)
         graph.add_edge(START, "plan")
         graph.add_conditional_edges(
-            "plan", self._next_node, {"completed": END, "failed": "failure"}
+            "plan", self._next_node, {"budget": "budget", "failed": "failure"}
         )
+        graph.add_edge("budget", END)
         graph.add_edge("failure", END)
         self._graph = graph.compile()
 
@@ -62,13 +67,23 @@ class TripPlanningWorkflow:
             else:
                 # Keeps isolated test doubles and older integrations compatible.
                 plan = planner.plan_trip(state["constraints"])
-            return {"plan": plan, "status": "completed", "error": None, "retrieval": retrieval}
+            return {"plan": plan, "status": "budgeting", "error": None, "retrieval": retrieval}
         except AppError as error:
             return {"plan": None, "status": "failed", "error": error, "retrieval": None}
 
     @staticmethod
-    def _next_node(state: TripWorkflowState) -> Literal["completed", "failed"]:
-        return "completed" if state["status"] == "completed" else "failed"
+    def _next_node(state: TripWorkflowState) -> Literal["budget", "failed"]:
+        return "budget" if state["status"] == "budgeting" else "failed"
+
+    def _budget(self, state: TripWorkflowState) -> dict[str, object]:
+        plan = state["plan"]
+        if plan is None:
+            return {"status": "failed", "error": upstream_failure(RuntimeError("missing plan"))}
+        return {
+            "plan": self._budget_engine.apply(plan, state["constraints"]),
+            "status": "completed",
+            "error": None,
+        }
 
     @staticmethod
     def _record_failure(state: TripWorkflowState) -> dict[str, object]:

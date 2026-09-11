@@ -10,6 +10,7 @@ from ...models.schemas import (
 from ...agents.trip_planner_agent import get_trip_planner_agent
 from ...config import validate_config
 from ...services.constraint_service import build_travel_constraints
+from ...services.budget_service import get_budget_engine
 from ...services.persistence_service import PlanStore, StoredTripPlan, get_plan_store
 from ...workflows.trip_workflow import TripPlanningWorkflow
 
@@ -74,7 +75,11 @@ def get_plan(plan_id: str):
 
 @router.put("/plans/{plan_id}", response_model=StoredTripPlanResponse, summary="更新旅行计划")
 def update_plan(plan_id: str, request: TripPlanUpdateRequest):
-    record = _required_store().replace(plan_id, request.data, request.expected_version)
+    store = _required_store()
+    current = store.get(plan_id)
+    constraints = build_travel_constraints(current.request)
+    plan = get_budget_engine().apply(request.data, constraints)
+    record = store.replace(plan_id, plan, request.expected_version)
     return _response(record, "旅行计划更新成功")
 
 @router.get("/health", summary="规划配置检查（不调用外部服务）")

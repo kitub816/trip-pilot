@@ -121,7 +121,7 @@ class Attraction(BaseModel):
     photos: Optional[List[str]] = Field(default_factory=list, description="景点图片URL列表")
     poi_id: Optional[str] = Field(default="", description="POI ID")
     image_url: Optional[str] = Field(default=None, description="图片URL")
-    ticket_price: int = Field(default=0, description="门票价格(元)")
+    ticket_price: Optional[int] = Field(default=None, ge=0, description="每人门票价格(元)，未知为null")
 
 
 class Meal(BaseModel):
@@ -131,7 +131,7 @@ class Meal(BaseModel):
     address: Optional[str] = Field(default=None, description="地址")
     location: Optional[Location] = Field(default=None, description="经纬度坐标")
     description: Optional[str] = Field(default=None, description="描述")
-    estimated_cost: int = Field(default=0, description="预估费用(元)")
+    estimated_cost: Optional[int] = Field(default=None, ge=0, description="每人预估费用(元)，未知为null")
 
 
 class Hotel(BaseModel):
@@ -143,7 +143,7 @@ class Hotel(BaseModel):
     rating: str = Field(default="", description="评分")
     distance: str = Field(default="", description="距离景点距离")
     type: str = Field(default="", description="酒店类型")
-    estimated_cost: int = Field(default=0, description="预估费用(元/晚)")
+    estimated_cost: Optional[int] = Field(default=None, ge=0, description="每间每晚预估费用(元)，未知为null")
 
 
 class DayPlan(BaseModel):
@@ -152,6 +152,7 @@ class DayPlan(BaseModel):
     day_index: int = Field(..., description="第几天(从0开始)")
     description: str = Field(..., description="当日行程描述")
     transportation: str = Field(..., description="交通方式")
+    transportation_cost: Optional[int] = Field(default=None, ge=0, description="当日每人交通预估费用(元)，未知为null")
     accommodation: str = Field(..., description="住宿")
     hotel: Optional[Hotel] = Field(default=None, description="推荐酒店")
     attractions: List[Attraction] = Field(default=[], description="景点列表")
@@ -182,13 +183,28 @@ class WeatherInfo(BaseModel):
         return v
 
 
+class BudgetUnknownItem(BaseModel):
+    """A missing unit price that prevents an exact trip total."""
+
+    category: Literal["attraction", "hotel", "meal", "transportation"]
+    day_index: int = Field(ge=0)
+    item_name: str
+
+
 class Budget(BaseModel):
     """预算信息"""
-    total_attractions: int = Field(default=0, description="景点门票总费用")
-    total_hotels: int = Field(default=0, description="酒店总费用")
-    total_meals: int = Field(default=0, description="餐饮总费用")
-    total_transportation: int = Field(default=0, description="交通总费用")
-    total: int = Field(default=0, description="总费用")
+    total_attractions: int = Field(default=0, ge=0, description="已知景点门票总费用")
+    total_hotels: int = Field(default=0, ge=0, description="已知酒店总费用")
+    total_meals: int = Field(default=0, ge=0, description="已知餐饮总费用")
+    total_transportation: int = Field(default=0, ge=0, description="已知交通总费用")
+    total: int = Field(default=0, ge=0, description="已知费用合计")
+    currency: Literal["CNY"] = "CNY"
+    travelers: int = Field(default=1, ge=1)
+    rooms: int = Field(default=1, ge=1)
+    accommodation_nights: int = Field(default=0, ge=0)
+    is_complete: bool = True
+    within_limit: Optional[bool] = None
+    unknown_items: List[BudgetUnknownItem] = Field(default_factory=list)
 
 
 class TripPlan(BaseModel):
