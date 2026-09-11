@@ -26,9 +26,14 @@ Phase 0–6 已实现，Phase 7–18 待完成。用户已授权逐阶段继续�
 | 2 | [约束引擎](phase2.md)，提交 b0e5a04 |
 | 3 | [最小 LangGraph](phase3.md)，提交 0f5ceb1 |
 | 4 | [检索 Service](phase4.md)，提交 19a0d3b；本次复核发现原测试未覆盖真实返回格式，缺口已在 Phase 5 修补 |
-| 5 | [Tool Runtime](phase5.md)，包括 Phase 4 缺口修补 |\n| 6 | [Redis 类型化检索缓存](phase6.md)，提交待本阶段验证后记录 |
+| 5 | [Tool Runtime](phase5.md)，包括 Phase 4 缺口修补 |
+| 6 | [Redis 类型化检索缓存](phase6.md)，提交 a48b78c |
 
-## Phase 6 修改\n\n新增 `cache_service.py` 和 Redis 集成/回归测试；AmapService 的完整 POI 搜索、天气、geocode、路线在 Pydantic 边界接入可选缓存。缓存采用版本化哈希键、TTL envelope 和二次 Pydantic 校验；不缓存空值、失败或不完整 POI，Redis 断开时回源。\n\n## Phase 5 修改
+## Phase 6 修改
+
+新增 `cache_service.py` 和 Redis 集成/回归测试；AmapService 的完整 POI 搜索、天气、geocode、路线在 Pydantic 边界接入可选缓存。缓存采用版本化哈希键、TTL envelope 和二次 Pydantic 校验；不缓存空值、失败或不完整 POI，Redis 断开时回源。
+
+## Phase 5 修改
 
 新增 `backend/app/services/tool_runtime.py`；更新 AmapService、RetrievalService、Planner 兼容入口、配置、错误、生命周期、日志及依赖；新增 runtime/stdio/检索集成测试和离线 MCP fixture；修订已迁移接口的旧测试。删除废弃检索 Agent Prompt 和已损坏的旧四 Agent 入口实现。
 
