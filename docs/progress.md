@@ -4,11 +4,11 @@
 
 ## 当前阶段
 
-Phase 0–8 已实现，Phase 9–18 待完成。用户已授权逐阶段继续到最终阶段；每阶段独立验证、提交并归档文档。
+Phase 0–9 已实现，Phase 10–18 待完成。用户已授权逐阶段继续到最终阶段；每阶段独立验证、提交并归档文档。
 
 ## 当前架构
 
-`FastAPI 同步工作线程 → TravelConstraints → LangGraph(plan → deterministic budget) → TripRetrievalService → AmapService → 类型化 RetrievalCache（可选 Redis）→ ToolRuntime → 原生 MCP stdio 会话`。Planner LLM 生成日程与单价线索，BudgetEngine 按人数和夜数覆盖预算汇总；配置数据库后，PlanStore 持久化最终计划。请求级图 state 不作 checkpoint，Planner 仍用进程内互斥和历史清理。
+`FastAPI 同步工作线程 → TravelConstraints → LangGraph(plan → deterministic route → deterministic budget) → TripRetrievalService → AmapService → 类型化 RetrievalCache（可选 Redis）→ ToolRuntime → 原生 MCP stdio 会话`。Planner LLM 生成候选日程与单价线索，RouteOptimizer 查询路线并重排每日景点，BudgetEngine 按人数和夜数覆盖预算汇总；配置数据库后，PlanStore 持久化最终计划。请求级图 state 不作 checkpoint，Planner 仍用进程内互斥和历史清理。
 
 - 约束：日期、人数、CNY 预算上限、必去/避开、步行及单段交通上限已结构化；自由文本提取只有合并边界，尚无提取器。
 - 工具：本地 Pydantic 参数白名单 + 发现的工具 schema；每次尝试独立会话；默认 20 秒单次/50 秒总截止时间、最多 2 次尝试、每进程 3 个并发槽。只重试明确超时或结构化限流。
@@ -16,6 +16,7 @@ Phase 0–8 已实现，Phase 9–18 待完成。用户已授权逐阶段继续�
 - 缓存：只保存已验证的 POI、天气、geocode、路线类型结果；键含协议版本、操作和规范化参数哈希。POI/geocode 24 小时、路线 30 分钟、天气 10 分钟；Redis 不可用或值损坏时回源。
 - 持久化：可选 MySQL 保存请求、`planning/completed/failed` 状态、计划 JSON 和乐观锁版本；提供 GET/PUT，数据库关闭时旧 POST 保持兼容。
 - 预算：门票、餐饮和交通按人数计算，酒店按两人一间及 `天数-1` 夜计算；0 与未知 null 分离，输出 unknown_items、完整性和预算上限三态。
+- 路线：每天最多 6 点构建有向矩阵，日内最多 3 个并发调用，单段 60 秒、每日矩阵 90 秒截止；固定首点的最近邻排序可复现，显式输出不可达、分段超时、步行超限和矩阵截断。
 - 地图：按本地缓存的 amap-mcp-server 0.1.11 源码解析搜索、详情、天气、地理编码和路线；生产固定该版本。搜索不含坐标，详情提供坐标；路线结果有距离和时间，无前端路网折线。
 - 安全：API 错误不含原文；MCP 子进程 stderr 不外传，MCP transport 日志只保留安全事件；健康检查不访问外部依赖。
 - 生命周期：会话及子进程由 async context 关闭；ASGI 停机清理 runtime、服务和 Planner/LLM 引用。
@@ -33,6 +34,11 @@ Phase 0–8 已实现，Phase 9–18 待完成。用户已授权逐阶段继续�
 | 6 | [Redis 类型化检索缓存](phase6.md)，提交 a48b78c |
 | 7 | [MySQL 计划持久化](phase7.md)，提交 85d01e1 |
 | 8 | [确定性 Budget Engine](phase8.md)，提交 53f469f |
+| 9 | [确定性 Route Optimizer](phase9.md)，提交待本阶段提交后回填 |
+
+## Phase 9 修改
+
+新增 `RouteOptimizer` 和 LangGraph route 节点，复用 AmapService、Tool Runtime 与路线缓存构建有界有向矩阵；固定首点并按时间、距离及原始位置确定性排序。新增类型化日路线和路段状态，显式标记不可达、单段时间超限、每日步行超限及矩阵截断。创建和 PUT 更新均先重算路线再重算预算。
 
 ## Phase 8 修改
 
@@ -54,12 +60,12 @@ Phase 0–8 已实现，Phase 9–18 待完成。用户已授权逐阶段继续�
 
 ## 实际验证
 
-`backend: python -m pytest tests -q`：**111 passed，2 skipped，10 warnings**。
+`backend: python -m pytest tests -q`：**123 passed，2 skipped，10 warnings**。
 
 真实 MySQL 8.4 一次性容器验证：`tests/test_phase7_persistence.py` **7 passed，10 warnings**；容器已删除。真实 Redis 阶段验证仍见 Phase 6 记录。
 `git diff --check`：通过。
 
-测试包括真实本地 MCP stdio 子进程正常关闭/超时退出（检查进程 returncode）、替身会话取消/配额释放/并发重叠/有界重试/总截止时间、服务 schema 不匹配、JSON 及结构化 MCP 错误、真实服务格式样例、慢天气保留景点。没有访问真实高德、LLM 或 Unsplash，没有线上性能结论。
+测试包括真实本地 MCP stdio 子进程正常关闭/超时退出（检查进程 returncode）、替身会话取消/配额释放/并发重叠/有界重试/总截止时间、服务 schema 不匹配、JSON 及结构化 MCP 错误、真实服务格式样例、慢天气保留景点，以及路线矩阵的可复现顺序、并发边界、不可达、约束和取消。没有访问真实高德、LLM 或 Unsplash，没有线上性能结论。
 
 环境：Python 3.10.1、mcp 1.29.1、anyio 4.14.2、hello-agents 0.2.9；LangGraph 本机仍为 1.0.0a3，后续需要在干净环境固定稳定版本。前端最近一次 Phase 2 构建通过，本阶段未改前端。
 
@@ -72,9 +78,11 @@ Phase 0–8 已实现，Phase 9–18 待完成。用户已授权逐阶段继续�
 - Redis 已作为可选检索缓存接入；MySQL 已提供可选计划记录，前端尚未改为服务端读取；尚无 RAG/持久 checkpoint/部署与线上评测，不可宣称行程已通过硬约束验证。
 - MySQL 当前使用 `create_all`，没有 Alembic、鉴权、所有权或中断工作流恢复；`planning` 只用于识别未完成请求。
 - 预算单价尚无可靠证据；房间容量固定为 2，交通尚未按路线段生成，前端还未展示未知费用状态。
+- 路线使用固定首点的最近邻启发式，不保证全局最优；混合交通暂映射公共交通，尚无逐段多模式比较、路线几何、固定中间点或时间窗。
+- 路线只标记失败和超限，尚未触发重新选点；整个规划请求也没有统一总截止时间。
 - 缓存没有 single-flight、主动失效、预热或命中率指标；未在真实负载上测量延迟与成本收益。
 - 子进程级并发已由离线 MCP 测试验证；真实地图服务仍需联网验收。依赖弃用警告和前端大包警告尚存。
 
 ## 下一阶段
 
-Phase 9：实现确定性 Route Optimizer，构建有界路线矩阵并处理不可达、交通方式和时间上限。
+Phase 10：实现 Structured Planner，让 LLM 只能从候选 ID 中选择并按 schema 返回，拒绝非法 JSON、未知 POI ID 和越界日期。

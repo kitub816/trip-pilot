@@ -1,6 +1,6 @@
 # TripPilot 渐进重构计划
 
-本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–8 已完成；Phase 9–18 为待办。实际范围、验证与限制见 [progress.md](progress.md)。
+本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–9 已完成；Phase 10–18 为待办。实际范围、验证与限制见 [progress.md](progress.md)。
 
 ## 迁移原则与落点
 
@@ -20,7 +20,7 @@
 | 6 Redis（已完成） | Amap 类型化结果边界接入可选 Redis；版本化规范参数哈希键，POI/geocode 24h、路线 30m、天气 10m，缓存 envelope 与二次 Pydantic 校验 | 命中、过期、参数隔离、损坏值、取消与断连回源测试；真实一次性 Redis 容器验证读写和 TTL；未缓存完整 Prompt、state 或 LLM 结果 |
 | 7 MySQL（已完成） | SQLAlchemy + PyMySQL 保存请求、计划、状态和乐观锁版本；提供 GET/PUT；业务计划记录与 LangGraph checkpoint 分离 | SQLite 文件重启与真实 MySQL 8.4 容器验证；前端切换、Alembic、鉴权和中断工作流恢复尚未完成 |
 | 8 Budget Engine（已完成） | 从门票、餐饮、酒店和新增每日交通单价生成 Budget；按人数、两人一间及实际住宿夜数计算，0/null 分离，输出未知项与上限三态 | 人数、房间、夜数、临界值、未知费用、负数、单日和末日酒店测试；LangGraph 与 PUT 都覆盖 LLM/客户端总价 |
-| 9 Route Optimizer | 复用 AmapService 路线工具映射和 Location；标准化 RouteInfo，构建有界路线矩阵，按交通方式确定性排序与时间计算 | 固定矩阵可复现顺序，处理不可达/缺路段；限制步行和交通时间；前端折线不作为真实路网证据 |
+| 9 Route Optimizer（已完成） | 复用 AmapService 的 RouteInfo、Tool Runtime 与 Redis 路线缓存；每天最多 6 点构建有向矩阵，固定首点作确定性最近邻排序；新增类型化路段和每日路线汇总 | 12 项专项测试覆盖可复现顺序、四种交通输入、并发/规模、不可达、分段与步行限制、取消和矩阵截止；不声称 TSP 最优或前端折线为真实路网 |
 | 10 Structured Planner | 改造 PLANNER_AGENT_PROMPT、_build_planner_query 和 _parse_response；模型从候选 ID 中选择，结果按 schema 返回；预算字段由代码补算 | 非法 JSON、未知 POI ID、越界日期被拒绝；有界格式修复；不恢复虚构 fallback；保留现有响应字段适配 |
 | 11 Validator + Replan | 新增确定性 validator，LangGraph 按 violations 分支；检查预算、必去/避开、重复、时段、开放时间、交通和步行；Planner 仅处理重排及软偏好 | 每条约束有正反例；无解/达到最大轮数明确终止；修改计划后重算、重验 |
 | 12 RAG | 在候选景点 ID 上补官方开放时间/预约/无障碍等证据；输入 Planner 与 Validator | 引用来自真实 metadata（来源、抓取时间、适用日期）；无来源不编引用；缺证据返回不确定，而不是默认为开放 |
@@ -39,6 +39,6 @@
 4. 输入无硬约束、输出无真实来源：先定义模型再建预算/路线/Validator，不能让模型输出金额充当预算引擎。
 5. Git 已初始化并有基线提交；每个后续阶段继续以真实 diff 和测试结果更新进度。
 
-## 下一阶段执行清单（Phase 9）
+## 下一阶段执行清单（Phase 10）
 
-复用 AmapService 的 geocode 与路线工具，标准化交通方式，构建有界路线矩阵；使用固定输入可复现地优化每日地点顺序，并显式处理不可达、缺失路段及单段时间上限。
+改造 `PLANNER_AGENT_PROMPT`、`_build_planner_query` 与 `_parse_response`：给候选稳定 ID，让模型只能引用候选；使用明确 schema 解析计划，校验日期范围、引用和字段边界；格式错误只允许有限修复，最终失败必须返回结构化错误。路线和预算仍由后续确定性节点覆盖。

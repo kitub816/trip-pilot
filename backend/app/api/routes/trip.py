@@ -12,6 +12,7 @@ from ...config import validate_config
 from ...services.constraint_service import build_travel_constraints
 from ...services.budget_service import get_budget_engine
 from ...services.persistence_service import PlanStore, StoredTripPlan, get_plan_store
+from ...services.route_service import get_route_optimizer
 from ...workflows.trip_workflow import TripPlanningWorkflow
 
 router = APIRouter(prefix="/trip", tags=["旅行规划"])
@@ -78,7 +79,8 @@ def update_plan(plan_id: str, request: TripPlanUpdateRequest):
     store = _required_store()
     current = store.get(plan_id)
     constraints = build_travel_constraints(current.request)
-    plan = get_budget_engine().apply(request.data, constraints)
+    plan = get_route_optimizer().apply(request.data, constraints)
+    plan = get_budget_engine().apply(plan, constraints)
     record = store.replace(plan_id, plan, request.expected_version)
     return _response(record, "旅行计划更新成功")
 

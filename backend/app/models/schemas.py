@@ -146,6 +146,28 @@ class Hotel(BaseModel):
     estimated_cost: Optional[int] = Field(default=None, ge=0, description="每间每晚预估费用(元)，未知为null")
 
 
+class RouteLeg(BaseModel):
+    origin_name: str
+    destination_name: str
+    distance: Optional[float] = Field(default=None, ge=0, description="路线距离(米)")
+    duration: Optional[int] = Field(default=None, ge=0, description="路线时间(秒)")
+    route_type: Literal["walking", "driving", "transit"]
+    status: Literal["available", "unavailable", "over_time_limit"]
+
+
+class DayRoute(BaseModel):
+    route_type: Literal["walking", "driving", "transit"]
+    legs: List[RouteLeg] = Field(default_factory=list)
+    total_distance: float = Field(default=0, ge=0)
+    total_duration: int = Field(default=0, ge=0)
+    is_complete: bool = True
+    within_limits: bool = True
+    warning_codes: List[Literal[
+        "ROUTE_UNAVAILABLE", "SEGMENT_TIME_EXCEEDED",
+        "DAILY_WALKING_EXCEEDED", "MATRIX_TRUNCATED",
+    ]] = Field(default_factory=list)
+
+
 class DayPlan(BaseModel):
     """单日行程"""
     date: str = Field(..., description="日期 YYYY-MM-DD")
@@ -157,6 +179,7 @@ class DayPlan(BaseModel):
     hotel: Optional[Hotel] = Field(default=None, description="推荐酒店")
     attractions: List[Attraction] = Field(default=[], description="景点列表")
     meals: List[Meal] = Field(default=[], description="餐饮列表")
+    route: Optional[DayRoute] = Field(default=None, description="确定性路线优化摘要")
 
 
 class WeatherInfo(BaseModel):

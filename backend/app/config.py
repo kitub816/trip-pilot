@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     redis_url: SecretStr = SecretStr("")
     redis_timeout: float = Field(default=0.3, gt=0, le=3)
     database_url: SecretStr = SecretStr("")
+    route_max_points: int = Field(default=6, ge=2, le=10)
+    route_concurrency: int = Field(default=3, ge=1, le=8)
+    route_leg_timeout: float = Field(default=60, gt=0, le=180)
+    route_matrix_timeout: float = Field(default=90, gt=0, le=300)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
     def get_cors_origins_list(self) -> list[str]:

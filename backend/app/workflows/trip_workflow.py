@@ -10,13 +10,14 @@ from ..models.schemas import TripPlan
 from ..services.constraint_service import TravelConstraints
 from ..services.budget_service import BudgetEngine, get_budget_engine
 from ..services.retrieval_service import TripRetrievalResult, retrieve_trip_context
+from ..services.route_service import RouteOptimizer, get_route_optimizer
 
 
 class TripWorkflowState(TypedDict):
     """All state for one planning request; it is never retained between runs."""
 
     constraints: TravelConstraints
-    status: Literal["planning", "budgeting", "completed", "failed"]
+    status: Literal["planning", "routing", "budgeting", "completed", "failed"]
     plan: TripPlan | None
     error: AppError | None
     retrieval: TripRetrievalResult | None
@@ -29,17 +30,21 @@ class TripPlanningWorkflow:
     """Minimal graph that isolates orchestration from transport and agents."""
 
     def __init__(self, planner_factory: PlannerFactory = get_trip_planner_agent,
-                 budget_engine: BudgetEngine | None = None) -> None:
+                 budget_engine: BudgetEngine | None = None,
+                 route_optimizer: RouteOptimizer | None = None) -> None:
         self._planner_factory = planner_factory
         self._budget_engine = budget_engine or get_budget_engine()
+        self._route_optimizer = route_optimizer or get_route_optimizer()
         graph = StateGraph(TripWorkflowState)
         graph.add_node("plan", self._plan)
+        graph.add_node("route", self._route)
         graph.add_node("budget", self._budget)
         graph.add_node("failure", self._record_failure)
         graph.add_edge(START, "plan")
         graph.add_conditional_edges(
-            "plan", self._next_node, {"budget": "budget", "failed": "failure"}
+            "plan", self._next_node, {"route": "route", "failed": "failure"}
         )
+        graph.add_edge("route", "budget")
         graph.add_edge("budget", END)
         graph.add_edge("failure", END)
         self._graph = graph.compile()
@@ -67,13 +72,23 @@ class TripPlanningWorkflow:
             else:
                 # Keeps isolated test doubles and older integrations compatible.
                 plan = planner.plan_trip(state["constraints"])
-            return {"plan": plan, "status": "budgeting", "error": None, "retrieval": retrieval}
+            return {"plan": plan, "status": "routing", "error": None, "retrieval": retrieval}
         except AppError as error:
             return {"plan": None, "status": "failed", "error": error, "retrieval": None}
 
     @staticmethod
-    def _next_node(state: TripWorkflowState) -> Literal["budget", "failed"]:
-        return "budget" if state["status"] == "budgeting" else "failed"
+    def _next_node(state: TripWorkflowState) -> Literal["route", "failed"]:
+        return "route" if state["status"] == "routing" else "failed"
+
+    def _route(self, state: TripWorkflowState) -> dict[str, object]:
+        plan = state["plan"]
+        if plan is None:
+            return {"status": "failed", "error": upstream_failure(RuntimeError("missing plan"))}
+        return {
+            "plan": self._route_optimizer.apply(plan, state["constraints"]),
+            "status": "budgeting",
+            "error": None,
+        }
 
     def _budget(self, state: TripWorkflowState) -> dict[str, object]:
         plan = state["plan"]
