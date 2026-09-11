@@ -32,7 +32,7 @@ Phase 0–8 已实现，Phase 9–18 待完成。用户已授权逐阶段继续�
 | 5 | [Tool Runtime](phase5.md)，包括 Phase 4 缺口修补 |
 | 6 | [Redis 类型化检索缓存](phase6.md)，提交 a48b78c |
 | 7 | [MySQL 计划持久化](phase7.md)，提交 85d01e1 |
-| 8 | [确定性 Budget Engine](phase8.md)，提交待验证后记录 |
+| 8 | [确定性 Budget Engine](phase8.md)，提交 53f469f |
 
 ## Phase 8 修改
 
