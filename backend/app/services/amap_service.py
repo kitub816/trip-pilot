@@ -9,6 +9,7 @@ from pydantic import JsonValue, ValidationError
 from ..errors import AppError, ToolArgumentError, ToolProtocolError, UpstreamError
 from ..models.schemas import Location, POIInfo, RouteInfo, WeatherInfo
 from .tool_runtime import ToolRuntime, get_tool_runtime, parse_payload
+from .cache_service import RetrievalCache, cached, get_retrieval_cache, skip_cache_write
 
 
 def records(payload: JsonValue, key: str) -> list[dict[str, JsonValue]]:
@@ -43,9 +44,11 @@ def string(value: JsonValue) -> str:
 
 
 class AmapService:
-    def __init__(self, runtime: ToolRuntime | None = None):
+    def __init__(self, runtime: ToolRuntime | None = None, cache: RetrievalCache | None = None):
         self.runtime = runtime or get_tool_runtime()
+        self.cache = cache or get_retrieval_cache()
 
+    @cached("poi", list[POIInfo])
     async def asearch_poi(self, keywords: str, city: str, citylimit: bool = True) -> list[POIInfo]:
         result = await self.runtime.call("maps_text_search", {
             "keywords": keywords, "city": city, "citylimit": str(citylimit).lower()})
@@ -55,7 +58,10 @@ class AmapService:
         seen: set[str] = set()
         for item in items:
             poi_id = string(item.get("id"))
-            if not poi_id or poi_id in seen:
+            if not poi_id:
+                skip_cache_write()
+                continue
+            if poi_id in seen:
                 continue
             if len(seen) == 6:
                 break
@@ -71,11 +77,13 @@ class AmapService:
                     location=location(item.get("location")), tel=string(item.get("tel")) or None))
             except AppError:
                 # Individual bad details cannot discard valid candidates already retrieved.
+                skip_cache_write()
                 continue
         if items and not pois:
             raise ToolProtocolError()
         return pois
 
+    @cached("weather", list[WeatherInfo])
     async def aget_weather(self, city: str) -> list[WeatherInfo]:
         result = await self.runtime.call("maps_weather", {"city": city})
         rows = records(result.payload, "forecasts")
@@ -101,6 +109,7 @@ class AmapService:
             raise ToolProtocolError()
         return data
 
+    @cached("geocode", Location | None)
     async def ageocode(self, address: str, city: str | None = None) -> Location | None:
         arguments = {"address": address}
         if city is not None:
@@ -109,6 +118,7 @@ class AmapService:
         rows = records(result.payload, "return")
         return location(rows[0].get("location")) if rows else None
 
+    @cached("route", RouteInfo)
     async def aplan_route(self, origin_address: str, destination_address: str,
                          origin_city: str | None = None, destination_city: str | None = None,
                          route_type: str = "walking") -> RouteInfo:

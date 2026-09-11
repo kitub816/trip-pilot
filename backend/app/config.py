@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     tool_total_timeout: float = Field(default=50, gt=0, le=300)
     tool_max_attempts: int = Field(default=2, ge=1, le=3)
     tool_concurrency: int = Field(default=3, ge=1, le=8)
+    redis_url: SecretStr = SecretStr("")
+    redis_timeout: float = Field(default=0.3, gt=0, le=3)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
     def get_cors_origins_list(self) -> list[str]:
