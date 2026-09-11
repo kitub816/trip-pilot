@@ -34,7 +34,7 @@ Phase 0–9 已实现，Phase 10–18 待完成。用户已授权逐阶段继续
 | 6 | [Redis 类型化检索缓存](phase6.md)，提交 a48b78c |
 | 7 | [MySQL 计划持久化](phase7.md)，提交 85d01e1 |
 | 8 | [确定性 Budget Engine](phase8.md)，提交 53f469f |
-| 9 | [确定性 Route Optimizer](phase9.md)，提交待本阶段提交后回填 |
+| 9 | [确定性 Route Optimizer](phase9.md)，提交 3bbe3fc |
 
 ## Phase 9 修改
 
