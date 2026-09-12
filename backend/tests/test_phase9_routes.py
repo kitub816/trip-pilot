@@ -7,6 +7,7 @@ import pytest
 
 from app.errors import UpstreamError
 from app.models.schemas import Attraction, DayPlan, Location, RouteInfo, TripPlan, TripRequest
+from app.models.validation import PlanValidationResult
 from app.services.constraint_service import build_travel_constraints
 from app.services.route_service import RouteOptimizer
 from app.workflows.trip_workflow import TripPlanningWorkflow
@@ -220,6 +221,7 @@ def test_workflow_runs_route_before_budget():
         planner_factory=lambda: SimpleNamespace(plan_trip=lambda _: original),
         route_optimizer=Route(),
         budget_engine=Budget(),
+        validator=SimpleNamespace(validate=lambda *_: PlanValidationResult()),
     )
     assert workflow.plan(constraints()).overall_suggestions == "routed"
     assert events == ["route", "budget"]

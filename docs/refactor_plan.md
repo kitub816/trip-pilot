@@ -1,6 +1,6 @@
 # TripPilot 渐进重构计划
 
-本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–10 已完成；Phase 11–18 为待办。实际范围、验证与限制见 [progress.md](progress.md)。
+本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–11 已完成；Phase 12–18 为待办。实际范围、验证与限制见 [progress.md](progress.md)。
 
 ## 迁移原则与落点
 
@@ -22,7 +22,7 @@
 | 8 Budget Engine（已完成） | 从门票、餐饮、酒店和新增每日交通单价生成 Budget；按人数、两人一间及实际住宿夜数计算，0/null 分离，输出未知项与上限三态 | 人数、房间、夜数、临界值、未知费用、负数、单日和末日酒店测试；LangGraph 与 PUT 都覆盖 LLM/客户端总价 |
 | 9 Route Optimizer（已完成） | 复用 AmapService 的 RouteInfo、Tool Runtime 与 Redis 路线缓存；每天最多 6 点构建有向矩阵，固定首点作确定性最近邻排序；新增类型化路段和每日路线汇总 | 12 项专项测试覆盖可复现顺序、四种交通输入、并发/规模、不可达、分段与步行限制、取消和矩阵截止；不声称 TSP 最优或前端折线为真实路网 |
 | 10 Structured Planner（已完成） | 私有 PlannerDraft 使用 extra=forbid；候选映射为 A/H 作用域 ID，服务端水合 POI 与请求事实；默认一次修复、50k 响应上限 | 13 项专项测试覆盖稳定 ID、可信水合、未知引用、日期/索引、额外字段、三餐和修复上限；真实模型遵循率、候选数量与 token 预算仍待评测/网关阶段 |
-| 11 Validator + Replan | 新增确定性 validator，LangGraph 按 violations 分支；检查预算、必去/避开、重复、时段、开放时间、交通和步行；Planner 仅处理重排及软偏好 | 每条约束有正反例；无解/达到最大轮数明确终止；修改计划后重算、重验 |
+| 11 Validator + Replan（已完成） | 新增类型化 PlanViolation/Result 和确定性 Validator；检查当前有证据的日期、预算、must/avoid、重复与路线告警；LangGraph 以 error violations 触发默认一次 Replan，PUT 写前复验 | 11 项专项测试覆盖正反例、修正规则、一次成功/上限终止和 PUT 拒写；开放时间、时段和预约没有证据，明确留给 RAG 阶段 |
 | 12 RAG | 在候选景点 ID 上补官方开放时间/预约/无障碍等证据；输入 Planner 与 Validator | 引用来自真实 metadata（来源、抓取时间、适用日期）；无来源不编引用；缺证据返回不确定，而不是默认为开放 |
 | 13 Model Gateway | 在 llm_service.py 的现有 get_llm 边界集中 provider 配置、结构化输出适配、错误分类及用量记录 | 替身测试超时/限流/响应不兼容；明确 fallback 模型策略及总调用预算 |
 | 14 Observability | 扩展 Phase 1 日志关联到图节点、MCP、缓存、模型和校验；避免打印完整用户输入 | 一个请求可追踪各阶段和失败原因；记录真实耗时、用量与重试，不把模拟进度当指标 |
@@ -39,6 +39,6 @@
 4. 输入无硬约束、输出无真实来源：先定义模型再建预算/路线/Validator，不能让模型输出金额充当预算引擎。
 5. Git 已初始化并有基线提交；每个后续阶段继续以真实 diff 和测试结果更新进度。
 
-## 下一阶段执行清单（Phase 11）
+## 下一阶段执行清单（Phase 12）
 
-新增类型化 violation 模型与确定性 Validator，检查日期、预算、must/avoid、重复景点、路线不可达、单段交通和每日步行；把结果写入 LangGraph state 并按是否通过分支。Replan 只把结构化 violations 和已有候选交给 Planner，设置最大轮数；达到上限或无法满足时明确失败。计划更新后同样重算并重验。
+以候选 POI 的稳定 ID 为键，采集和检索官方开放时间、预约、规则及无障碍证据；每条事实必须保存来源 URL、抓取时间、适用日期和不确定状态。把事实摘要输入 Planner，并只在 Validator 有适用证据时检查开放/预约约束；缺证据输出 warning，不默认开放。

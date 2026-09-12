@@ -124,7 +124,9 @@ def test_safe_failure_contract(client, monkeypatch, error, status, code):
 
 
 def test_success_contract_and_request_id_uniqueness(client, monkeypatch):
-    monkeypatch.setattr(trip, "get_trip_planner_agent", lambda: SimpleNamespace(plan_trip=lambda request: TripPlan(**PLAN)))
+    monkeypatch.setattr(
+        trip, "get_trip_workflow", lambda: SimpleNamespace(plan=lambda _: TripPlan(**PLAN)),
+    )
     first = client.post("/api/trip/plan", json=REQUEST, headers={"X-Request-ID":"untrusted"})
     second = client.get("/health")
     assert first.json()["success"] is True and first.json()["data"]["city"] == "上海"
@@ -208,7 +210,7 @@ def test_slow_planning_does_not_block_liveness(monkeypatch):
         started.set()
         assert release.wait(5)
         return TripPlan(**PLAN)
-    monkeypatch.setattr(trip, "get_trip_planner_agent", lambda: SimpleNamespace(plan_trip=blocked))
+    monkeypatch.setattr(trip, "get_trip_workflow", lambda: SimpleNamespace(plan=blocked))
     async def check():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.create_app()), base_url="http://test") as client:
             pending = asyncio.create_task(client.post("/api/trip/plan", json=REQUEST))

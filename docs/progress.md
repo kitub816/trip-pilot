@@ -1,14 +1,14 @@
 # TripPilot 进度
 
-更新时间：2026-09-11。事实来源：当前代码、本文件、根目录 `docs-project_spec.md`。
+更新时间：2026-09-12。事实来源：当前代码、本文件、根目录 `docs-project_spec.md`。
 
 ## 当前阶段
 
-Phase 0–10 已实现，Phase 11–18 待完成。用户已授权逐阶段继续到最终阶段；每阶段独立验证、提交并归档文档。
+Phase 0–11 已实现，Phase 12–18 待完成。用户已授权逐阶段继续到最终阶段；每阶段独立验证、提交并归档文档。
 
 ## 当前架构
 
-`FastAPI 同步工作线程 → TravelConstraints → LangGraph(structured plan → deterministic route → deterministic budget) → TripRetrievalService → AmapService → 类型化 RetrievalCache（可选 Redis）→ ToolRuntime → 原生 MCP stdio 会话`。检索结果先生成请求内候选 catalog，Planner LLM 只返回候选 ID 草稿；Pydantic、引用和日期校验后由服务端水合 TripPlan。RouteOptimizer 查询路线并重排每日景点，BudgetEngine 覆盖预算汇总；配置数据库后，PlanStore 持久化最终计划。
+`FastAPI 同步工作线程 → TravelConstraints → LangGraph(structured plan → deterministic route → deterministic budget → deterministic validation → bounded replan) → TripRetrievalService → AmapService → 类型化 RetrievalCache（可选 Redis）→ ToolRuntime → 原生 MCP stdio 会话`。检索结果先生成请求内候选 catalog，Planner LLM 只返回候选 ID 草稿；服务端水合 TripPlan 后，路线、预算与 Validator 依次计算。只有类型化 error violations 才可触发一次有上限 Replan；配置数据库后，PlanStore 持久化最终计划。
 
 - 约束：日期、人数、CNY 预算上限、必去/避开、步行及单段交通上限已结构化；自由文本提取只有合并边界，尚无提取器。
 - 工具：本地 Pydantic 参数白名单 + 发现的工具 schema；每次尝试独立会话；默认 20 秒单次/50 秒总截止时间、最多 2 次尝试、每进程 3 个并发槽。只重试明确超时或结构化限流。
@@ -18,6 +18,7 @@ Phase 0–10 已实现，Phase 11–18 待完成。用户已授权逐阶段继�
 - 预算：门票、餐饮和交通按人数计算，酒店按两人一间及 `天数-1` 夜计算；0 与未知 null 分离，输出 unknown_items、完整性和预算上限三态。
 - 路线：每天最多 6 点构建有向矩阵，日内最多 3 个并发调用，单段 60 秒、每日矩阵 90 秒截止；固定首点的最近邻排序可复现，显式输出不可达、分段超时、步行超限和矩阵截断。
 - Planner：私有 `PlannerDraft` 禁止额外字段，景点/酒店只引用 `A001/H001` 作用域 ID；城市、日期、天气及 POI 身份由服务端水合。非法格式、未知 ID 和日期错位最多修复一次，仍失败则明确终止。
+- 校验：Validator 检查日期、预算、must/avoid、重复和路线告警；error 触发有上限 Replan，warning 保留不确定性。PUT 重算路线/预算后在持久化前复验。
 - 地图：按本地缓存的 amap-mcp-server 0.1.11 源码解析搜索、详情、天气、地理编码和路线；生产固定该版本。搜索不含坐标，详情提供坐标；路线结果有距离和时间，无前端路网折线。
 - 安全：API 错误不含原文；MCP 子进程 stderr 不外传，MCP transport 日志只保留安全事件；健康检查不访问外部依赖。
 - 生命周期：会话及子进程由 async context 关闭；ASGI 停机清理 runtime、服务和 Planner/LLM 引用。
@@ -37,6 +38,11 @@ Phase 0–10 已实现，Phase 11–18 待完成。用户已授权逐阶段继�
 | 8 | [确定性 Budget Engine](phase8.md)，提交 53f469f |
 | 9 | [确定性 Route Optimizer](phase9.md)，提交 3bbe3fc |
 | 10 | [Structured Planner](phase10.md)，提交 98c9402 |
+| 11 | [Validator + Replan](phase11.md)，提交待本阶段提交后回填 |
+
+## Phase 11 修改
+
+新增类型化 `PlanViolation` 和确定性 `PlanValidator`，把日期、预算、must/avoid、重复、路线不可达及交通/步行超限统一写入图 state。LangGraph 新增 validate、replan、failure 分支，默认只允许一次重规划并在再次违规时返回安全 422。计划 PUT 重算路线和预算后必须验证，失败不写入新版本。
 
 ## Phase 10 修改
 
@@ -66,12 +72,12 @@ Phase 0–10 已实现，Phase 11–18 待完成。用户已授权逐阶段继�
 
 ## 实际验证
 
-`backend: python -m pytest tests -q`：**136 passed，2 skipped，10 warnings**。
+`backend: python -m pytest tests -q`：**147 passed，2 skipped，10 warnings**。
 
 真实 MySQL 8.4 一次性容器验证：`tests/test_phase7_persistence.py` **7 passed，10 warnings**；容器已删除。真实 Redis 阶段验证仍见 Phase 6 记录。
 `git diff --check`：通过。
 
-测试包括真实本地 MCP stdio 子进程正常关闭/超时退出（检查进程 returncode）、工具取消/配额/重试/截止时间、真实服务格式样例、路线矩阵边界，以及 Planner 候选 ID、可信水合、未知引用、日期序列、额外字段和有限修复。没有访问真实高德、LLM 或 Unsplash，没有线上性能结论。
+测试包括真实本地 MCP stdio 子进程正常关闭/超时退出（检查进程 returncode）、工具取消/配额/重试/截止时间、路线矩阵边界、Planner 候选与有限修复，以及 Validator 的约束违规、图中有界重规划与 PUT 写入前复验。没有访问真实高德、LLM 或 Unsplash，没有线上性能结论。
 
 环境：Python 3.10.1、mcp 1.29.1、anyio 4.14.2、hello-agents 0.2.9；LangGraph 本机仍为 1.0.0a3，后续需要在干净环境固定稳定版本。前端最近一次 Phase 2 构建通过，本阶段未改前端。
 
@@ -79,7 +85,7 @@ Phase 0–10 已实现，Phase 11–18 待完成。用户已授权逐阶段继�
 
 - 高德 MCP 0.1.11 会把部分错误压成文字，无法可靠区分这些错误的限流/可重试性；运行时保守不重试这类错误。
 - 截止时间触发后仍需执行 SDK 的进程清理，实际返回可多出清理时间。当前 HTTP 同步路由不会在客户端断开时自动取消；原生检索协程本身已支持取消。
-- Planner LLM 仍是同步 HelloAgents 调用，共享实例拒绝重叠规划；结构化草稿已限制候选和日期，但修复调用没有 token/成本总预算，最终约束验证待后续阶段。
+- Planner LLM 仍是同步 HelloAgents 调用，共享实例拒绝重叠规划；结构化草稿已限制候选和日期，Validator 已覆盖当前有证据的硬约束，但修复/Replan 调用没有 token/成本总预算。
 - ToolResult 提供工具名、抓取时间、尝试次数和耗时；候选级引用和跨节点指标尚未接入。
 - Redis 已作为可选检索缓存接入；MySQL 已提供可选计划记录，前端尚未改为服务端读取；尚无 RAG/持久 checkpoint/部署与线上评测，不可宣称行程已通过硬约束验证。
 - MySQL 当前使用 `create_all`，没有 Alembic、鉴权、所有权或中断工作流恢复；`planning` 只用于识别未完成请求。
@@ -87,9 +93,10 @@ Phase 0–10 已实现，Phase 11–18 待完成。用户已授权逐阶段继�
 - 路线使用固定首点的最近邻启发式，不保证全局最优；混合交通暂映射公共交通，尚无逐段多模式比较、路线几何、固定中间点或时间窗。
 - 路线只标记失败和超限，尚未触发重新选点；整个规划请求也没有统一总截止时间。
 - Planner 候选 Prompt 尚无独立数量上限；价格、时长、餐饮和描述仍缺少证据，尚未测试真实模型的 schema 遵循率。
+- 没有 POI 开放时间、预约和时段数据，不能验证时间冲突或开放约束；must/avoid 目前基于名称包含匹配，violations 未持久化或展示给前端。
 - 缓存没有 single-flight、主动失效、预热或命中率指标；未在真实负载上测量延迟与成本收益。
 - 子进程级并发已由离线 MCP 测试验证；真实地图服务仍需联网验收。依赖弃用警告和前端大包警告尚存。
 
 ## 下一阶段
 
-Phase 11：实现确定性 Validator 和有上限 Replan，把预算、必去/避开、重复、路线和时间问题汇总为类型化 violations。
+Phase 12：为候选 POI 接入带来源和适用日期的旅行 RAG，补官方开放时间、预约、规则和无障碍证据。

@@ -5,22 +5,29 @@ from typing import Callable, Literal, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from ..agents.trip_planner_agent import MultiAgentTripPlanner, get_trip_planner_agent
-from ..errors import AppError, upstream_failure
+from ..errors import AppError, PlanValidationError, upstream_failure
 from ..models.schemas import TripPlan
+from ..models.validation import PlanViolation
 from ..services.constraint_service import TravelConstraints
+from ..config import get_settings
 from ..services.budget_service import BudgetEngine, get_budget_engine
 from ..services.retrieval_service import TripRetrievalResult, retrieve_trip_context
 from ..services.route_service import RouteOptimizer, get_route_optimizer
+from ..services.validation_service import PlanValidator, get_plan_validator
 
 
 class TripWorkflowState(TypedDict):
     """All state for one planning request; it is never retained between runs."""
 
     constraints: TravelConstraints
-    status: Literal["planning", "routing", "budgeting", "completed", "failed"]
+    status: Literal[
+        "planning", "routing", "budgeting", "validating", "replanning", "completed", "failed",
+    ]
     plan: TripPlan | None
     error: AppError | None
     retrieval: TripRetrievalResult | None
+    violations: tuple[PlanViolation, ...]
+    replan_attempts: int
 
 
 PlannerFactory = Callable[[], MultiAgentTripPlanner]
@@ -31,27 +38,48 @@ class TripPlanningWorkflow:
 
     def __init__(self, planner_factory: PlannerFactory = get_trip_planner_agent,
                  budget_engine: BudgetEngine | None = None,
-                 route_optimizer: RouteOptimizer | None = None) -> None:
+                 route_optimizer: RouteOptimizer | None = None,
+                 validator: PlanValidator | None = None,
+                 max_replan_attempts: int | None = None) -> None:
         self._planner_factory = planner_factory
         self._budget_engine = budget_engine or get_budget_engine()
         self._route_optimizer = route_optimizer or get_route_optimizer()
+        self._validator = validator or get_plan_validator()
+        self._max_replan_attempts = (
+            get_settings().max_replan_attempts
+            if max_replan_attempts is None else max_replan_attempts
+        )
+        if self._max_replan_attempts < 0:
+            raise ValueError("max_replan_attempts must not be negative")
         graph = StateGraph(TripWorkflowState)
         graph.add_node("plan", self._plan)
         graph.add_node("route", self._route)
         graph.add_node("budget", self._budget)
+        graph.add_node("validate", self._validate)
+        graph.add_node("replan", self._replan)
         graph.add_node("failure", self._record_failure)
         graph.add_edge(START, "plan")
         graph.add_conditional_edges(
             "plan", self._next_node, {"route": "route", "failed": "failure"}
         )
-        graph.add_edge("route", "budget")
-        graph.add_edge("budget", END)
+        graph.add_conditional_edges(
+            "route", self._route_next, {"budget": "budget", "failed": "failure"},
+        )
+        graph.add_conditional_edges(
+            "budget", self._budget_next, {"validate": "validate", "failed": "failure"},
+        )
+        graph.add_conditional_edges(
+            "validate", self._validation_next,
+            {"completed": END, "replan": "replan", "failed": "failure"},
+        )
+        graph.add_edge("replan", "route")
         graph.add_edge("failure", END)
         self._graph = graph.compile()
 
     def plan(self, constraints: TravelConstraints) -> TripPlan:
         state = self._graph.invoke({
-            "constraints": constraints, "status": "planning", "plan": None, "error": None, "retrieval": None,
+            "constraints": constraints, "status": "planning", "plan": None, "error": None,
+            "retrieval": None, "violations": (), "replan_attempts": 0,
         })
         error = state["error"]
         if error is not None:
@@ -72,7 +100,10 @@ class TripPlanningWorkflow:
             else:
                 # Keeps isolated test doubles and older integrations compatible.
                 plan = planner.plan_trip(state["constraints"])
-            return {"plan": plan, "status": "routing", "error": None, "retrieval": retrieval}
+            return {
+                "plan": plan, "status": "routing", "error": None, "retrieval": retrieval,
+                "violations": (), "replan_attempts": 0,
+            }
         except AppError as error:
             return {"plan": None, "status": "failed", "error": error, "retrieval": None}
 
@@ -96,9 +127,58 @@ class TripPlanningWorkflow:
             return {"status": "failed", "error": upstream_failure(RuntimeError("missing plan"))}
         return {
             "plan": self._budget_engine.apply(plan, state["constraints"]),
-            "status": "completed",
+            "status": "validating",
             "error": None,
         }
+
+    @staticmethod
+    def _route_next(state: TripWorkflowState) -> Literal["budget", "failed"]:
+        return "budget" if state["status"] == "budgeting" else "failed"
+
+    @staticmethod
+    def _budget_next(state: TripWorkflowState) -> Literal["validate", "failed"]:
+        return "validate" if state["status"] == "validating" else "failed"
+
+    def _validate(self, state: TripWorkflowState) -> dict[str, object]:
+        plan = state["plan"]
+        if plan is None:
+            return {"status": "failed", "error": upstream_failure(RuntimeError("missing plan"))}
+        result = self._validator.validate(plan, state["constraints"])
+        if result.is_valid:
+            return {"status": "completed", "violations": tuple(result.violations), "error": None}
+        if state["replan_attempts"] >= self._max_replan_attempts or state["retrieval"] is None:
+            return {
+                "status": "failed", "violations": tuple(result.violations),
+                "error": PlanValidationError(),
+            }
+        return {"status": "replanning", "violations": tuple(result.violations), "error": None}
+
+    @staticmethod
+    def _validation_next(state: TripWorkflowState) -> Literal["completed", "replan", "failed"]:
+        if state["status"] == "completed":
+            return "completed"
+        if state["status"] == "replanning":
+            return "replan"
+        return "failed"
+
+    def _replan(self, state: TripWorkflowState) -> dict[str, object]:
+        retrieval = state["retrieval"]
+        if retrieval is None:
+            return {"status": "failed", "error": PlanValidationError()}
+        try:
+            planner = self._planner_factory()
+            if not hasattr(planner, "replan_from_retrieval"):
+                raise PlanValidationError()
+            plan = planner.replan_from_retrieval(
+                state["constraints"], retrieval.attractions, retrieval.weather,
+                retrieval.hotels, state["violations"],
+            )
+            return {
+                "plan": plan, "status": "routing", "error": None,
+                "replan_attempts": state["replan_attempts"] + 1,
+            }
+        except AppError as error:
+            return {"status": "failed", "error": error}
 
     @staticmethod
     def _record_failure(state: TripWorkflowState) -> dict[str, object]:

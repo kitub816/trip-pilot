@@ -168,11 +168,7 @@ def test_trip_endpoint_passes_normalized_constraints(monkeypatch):
             overall_suggestions="fixture",
         )
 
-    monkeypatch.setattr(
-        trip,
-        "get_trip_planner_agent",
-        lambda: SimpleNamespace(plan_trip=plan),
-    )
+    monkeypatch.setattr(trip, "get_trip_workflow", lambda: SimpleNamespace(plan=plan))
     with TestClient(main.create_app()) as client:
         response = client.post("/api/trip/plan", json=LEGACY_REQUEST)
     assert response.status_code == 200

@@ -114,6 +114,9 @@ def test_api_returns_id_reads_and_updates_persisted_plan(tmp_path, monkeypatch):
     store.initialize()
     monkeypatch.setattr(trip, "get_plan_store", lambda: store)
     monkeypatch.setattr(
+        trip, "get_plan_validator", lambda: SimpleNamespace(validate_or_raise=lambda *_: None),
+    )
+    monkeypatch.setattr(
         trip,
         "get_trip_workflow",
         lambda: SimpleNamespace(plan=lambda _: make_plan()),

@@ -15,6 +15,7 @@ from ..models.planner import PlannerDraft
 from ..models.schemas import (
     Attraction, DayPlan, Hotel, Meal, POIInfo, TripPlan, WeatherInfo,
 )
+from ..models.validation import PlanViolation
 from ..services.constraint_service import TravelConstraints
 from ..services.llm_service import get_llm
 
@@ -100,6 +101,8 @@ class MultiAgentTripPlanner:
         attractions: tuple[POIInfo, ...],
         weather: tuple[WeatherInfo, ...],
         hotels: tuple[POIInfo, ...],
+        *,
+        revision_instructions: str = "",
     ) -> TripPlan:
         """Plan from typed candidates and allow only a bounded format repair."""
         if not self._run_lock.acquire(blocking=False):
@@ -115,6 +118,8 @@ class MultiAgentTripPlanner:
                 json.dumps([item.model_dump(mode="json") for item in weather], ensure_ascii=False),
                 json.dumps(hotel_payload, ensure_ascii=False),
             )
+            if revision_instructions:
+                query += f"\n必须修正的确定性约束：\n{revision_instructions}"
             response = self.planner_agent.run(query)
             plan: TripPlan | None = None
             repair_attempts = getattr(self, "_repair_attempts", 1)
@@ -142,6 +147,23 @@ class MultiAgentTripPlanner:
                 self._clear_history()
             finally:
                 self._run_lock.release()
+
+    def replan_from_retrieval(
+        self,
+        request: TravelConstraints,
+        attractions: tuple[POIInfo, ...],
+        weather: tuple[WeatherInfo, ...],
+        hotels: tuple[POIInfo, ...],
+        violations: tuple[PlanViolation, ...],
+    ) -> TripPlan:
+        """Retry planning with bounded, typed hard-constraint findings only."""
+        revision = json.dumps(
+            [item.model_dump(exclude_none=True) for item in violations],
+            ensure_ascii=False,
+        )
+        return self.plan_from_retrieval(
+            request, attractions, weather, hotels, revision_instructions=revision,
+        )
 
     def plan_trip(self, request: TravelConstraints) -> TripPlan:
         """Compatibility entry point delegates retrieval to the existing Service."""

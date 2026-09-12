@@ -26,6 +26,11 @@ class PlanParseError(AppError):
     code = "PLAN_PARSE_ERROR"
     message = "无法解析有效的旅行计划，请重试"
 
+class PlanValidationError(AppError):
+    status_code = 422
+    code = "PLAN_VALIDATION_ERROR"
+    message = "旅行计划未满足确定性约束，请调整输入后重试"
+
 class FeatureUnavailable(AppError):
     status_code = 503
     code = "FEATURE_NOT_READY"

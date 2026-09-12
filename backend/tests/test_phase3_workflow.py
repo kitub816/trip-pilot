@@ -4,8 +4,14 @@ import pytest
 
 from app.errors import ServiceBusy
 from app.models.schemas import TripPlan, TripRequest
+from app.models.validation import PlanValidationResult
 from app.services.constraint_service import build_travel_constraints
 from app.workflows.trip_workflow import TripPlanningWorkflow
+
+
+class PassValidator:
+    def validate(self, plan, constraints):
+        return PlanValidationResult()
 
 
 REQUEST = {
@@ -30,7 +36,7 @@ def test_workflow_runs_request_scoped_typed_state():
             overall_suggestions="fixture",
         ))
 
-    workflow = TripPlanningWorkflow(planner_factory=factory)
+    workflow = TripPlanningWorkflow(planner_factory=factory, validator=PassValidator())
     assert workflow.plan(constraints).city == "上海"
     assert calls == [constraints]
 
