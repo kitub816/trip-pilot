@@ -4,11 +4,11 @@
 
 ## 当前阶段
 
-Phase 0–9 已实现，Phase 10–18 待完成。用户已授权逐阶段继续到最终阶段；每阶段独立验证、提交并归档文档。
+Phase 0–10 已实现，Phase 11–18 待完成。用户已授权逐阶段继续到最终阶段；每阶段独立验证、提交并归档文档。
 
 ## 当前架构
 
-`FastAPI 同步工作线程 → TravelConstraints → LangGraph(plan → deterministic route → deterministic budget) → TripRetrievalService → AmapService → 类型化 RetrievalCache（可选 Redis）→ ToolRuntime → 原生 MCP stdio 会话`。Planner LLM 生成候选日程与单价线索，RouteOptimizer 查询路线并重排每日景点，BudgetEngine 按人数和夜数覆盖预算汇总；配置数据库后，PlanStore 持久化最终计划。请求级图 state 不作 checkpoint，Planner 仍用进程内互斥和历史清理。
+`FastAPI 同步工作线程 → TravelConstraints → LangGraph(structured plan → deterministic route → deterministic budget) → TripRetrievalService → AmapService → 类型化 RetrievalCache（可选 Redis）→ ToolRuntime → 原生 MCP stdio 会话`。检索结果先生成请求内候选 catalog，Planner LLM 只返回候选 ID 草稿；Pydantic、引用和日期校验后由服务端水合 TripPlan。RouteOptimizer 查询路线并重排每日景点，BudgetEngine 覆盖预算汇总；配置数据库后，PlanStore 持久化最终计划。
 
 - 约束：日期、人数、CNY 预算上限、必去/避开、步行及单段交通上限已结构化；自由文本提取只有合并边界，尚无提取器。
 - 工具：本地 Pydantic 参数白名单 + 发现的工具 schema；每次尝试独立会话；默认 20 秒单次/50 秒总截止时间、最多 2 次尝试、每进程 3 个并发槽。只重试明确超时或结构化限流。
@@ -17,6 +17,7 @@ Phase 0–9 已实现，Phase 10–18 待完成。用户已授权逐阶段继续
 - 持久化：可选 MySQL 保存请求、`planning/completed/failed` 状态、计划 JSON 和乐观锁版本；提供 GET/PUT，数据库关闭时旧 POST 保持兼容。
 - 预算：门票、餐饮和交通按人数计算，酒店按两人一间及 `天数-1` 夜计算；0 与未知 null 分离，输出 unknown_items、完整性和预算上限三态。
 - 路线：每天最多 6 点构建有向矩阵，日内最多 3 个并发调用，单段 60 秒、每日矩阵 90 秒截止；固定首点的最近邻排序可复现，显式输出不可达、分段超时、步行超限和矩阵截断。
+- Planner：私有 `PlannerDraft` 禁止额外字段，景点/酒店只引用 `A001/H001` 作用域 ID；城市、日期、天气及 POI 身份由服务端水合。非法格式、未知 ID 和日期错位最多修复一次，仍失败则明确终止。
 - 地图：按本地缓存的 amap-mcp-server 0.1.11 源码解析搜索、详情、天气、地理编码和路线；生产固定该版本。搜索不含坐标，详情提供坐标；路线结果有距离和时间，无前端路网折线。
 - 安全：API 错误不含原文；MCP 子进程 stderr 不外传，MCP transport 日志只保留安全事件；健康检查不访问外部依赖。
 - 生命周期：会话及子进程由 async context 关闭；ASGI 停机清理 runtime、服务和 Planner/LLM 引用。
@@ -35,6 +36,11 @@ Phase 0–9 已实现，Phase 10–18 待完成。用户已授权逐阶段继续
 | 7 | [MySQL 计划持久化](phase7.md)，提交 85d01e1 |
 | 8 | [确定性 Budget Engine](phase8.md)，提交 53f469f |
 | 9 | [确定性 Route Optimizer](phase9.md)，提交 3bbe3fc |
+| 10 | [Structured Planner](phase10.md)，提交待本阶段提交后回填 |
+
+## Phase 10 修改
+
+新增私有 Planner 输出 schema，把不可信 LLM 草稿与公开 TripPlan 分离。检索候选映射为稳定的请求内 ID，模型只能选择 ID；服务端用原 POI 水合名称、地址、坐标和来源 ID，并用约束与检索结果覆盖城市、日期和天气。严格校验天数、日期、索引、三餐及额外字段；默认只允许一次格式修复。
 
 ## Phase 9 修改
 
@@ -60,12 +66,12 @@ Phase 0–9 已实现，Phase 10–18 待完成。用户已授权逐阶段继续
 
 ## 实际验证
 
-`backend: python -m pytest tests -q`：**123 passed，2 skipped，10 warnings**。
+`backend: python -m pytest tests -q`：**136 passed，2 skipped，10 warnings**。
 
 真实 MySQL 8.4 一次性容器验证：`tests/test_phase7_persistence.py` **7 passed，10 warnings**；容器已删除。真实 Redis 阶段验证仍见 Phase 6 记录。
 `git diff --check`：通过。
 
-测试包括真实本地 MCP stdio 子进程正常关闭/超时退出（检查进程 returncode）、替身会话取消/配额释放/并发重叠/有界重试/总截止时间、服务 schema 不匹配、JSON 及结构化 MCP 错误、真实服务格式样例、慢天气保留景点，以及路线矩阵的可复现顺序、并发边界、不可达、约束和取消。没有访问真实高德、LLM 或 Unsplash，没有线上性能结论。
+测试包括真实本地 MCP stdio 子进程正常关闭/超时退出（检查进程 returncode）、工具取消/配额/重试/截止时间、真实服务格式样例、路线矩阵边界，以及 Planner 候选 ID、可信水合、未知引用、日期序列、额外字段和有限修复。没有访问真实高德、LLM 或 Unsplash，没有线上性能结论。
 
 环境：Python 3.10.1、mcp 1.29.1、anyio 4.14.2、hello-agents 0.2.9；LangGraph 本机仍为 1.0.0a3，后续需要在干净环境固定稳定版本。前端最近一次 Phase 2 构建通过，本阶段未改前端。
 
@@ -73,16 +79,17 @@ Phase 0–9 已实现，Phase 10–18 待完成。用户已授权逐阶段继续
 
 - 高德 MCP 0.1.11 会把部分错误压成文字，无法可靠区分这些错误的限流/可重试性；运行时保守不重试这类错误。
 - 截止时间触发后仍需执行 SDK 的进程清理，实际返回可多出清理时间。当前 HTTP 同步路由不会在客户端断开时自动取消；原生检索协程本身已支持取消。
-- Planner LLM 仍是同步 HelloAgents 调用，共享实例仍拒绝重叠规划；预算汇总已移出 LLM，结构化候选选择和最终约束验证待后续阶段。
+- Planner LLM 仍是同步 HelloAgents 调用，共享实例拒绝重叠规划；结构化草稿已限制候选和日期，但修复调用没有 token/成本总预算，最终约束验证待后续阶段。
 - ToolResult 提供工具名、抓取时间、尝试次数和耗时；候选级引用和跨节点指标尚未接入。
 - Redis 已作为可选检索缓存接入；MySQL 已提供可选计划记录，前端尚未改为服务端读取；尚无 RAG/持久 checkpoint/部署与线上评测，不可宣称行程已通过硬约束验证。
 - MySQL 当前使用 `create_all`，没有 Alembic、鉴权、所有权或中断工作流恢复；`planning` 只用于识别未完成请求。
 - 预算单价尚无可靠证据；房间容量固定为 2，交通尚未按路线段生成，前端还未展示未知费用状态。
 - 路线使用固定首点的最近邻启发式，不保证全局最优；混合交通暂映射公共交通，尚无逐段多模式比较、路线几何、固定中间点或时间窗。
 - 路线只标记失败和超限，尚未触发重新选点；整个规划请求也没有统一总截止时间。
+- Planner 候选 Prompt 尚无独立数量上限；价格、时长、餐饮和描述仍缺少证据，尚未测试真实模型的 schema 遵循率。
 - 缓存没有 single-flight、主动失效、预热或命中率指标；未在真实负载上测量延迟与成本收益。
 - 子进程级并发已由离线 MCP 测试验证；真实地图服务仍需联网验收。依赖弃用警告和前端大包警告尚存。
 
 ## 下一阶段
 
-Phase 10：实现 Structured Planner，让 LLM 只能从候选 ID 中选择并按 schema 返回，拒绝非法 JSON、未知 POI ID 和越界日期。
+Phase 11：实现确定性 Validator 和有上限 Replan，把预算、必去/避开、重复、路线和时间问题汇总为类型化 violations。

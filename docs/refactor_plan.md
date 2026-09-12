@@ -1,6 +1,6 @@
 # TripPilot 渐进重构计划
 
-本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–9 已完成；Phase 10–18 为待办。实际范围、验证与限制见 [progress.md](progress.md)。
+本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–10 已完成；Phase 11–18 为待办。实际范围、验证与限制见 [progress.md](progress.md)。
 
 ## 迁移原则与落点
 
@@ -21,7 +21,7 @@
 | 7 MySQL（已完成） | SQLAlchemy + PyMySQL 保存请求、计划、状态和乐观锁版本；提供 GET/PUT；业务计划记录与 LangGraph checkpoint 分离 | SQLite 文件重启与真实 MySQL 8.4 容器验证；前端切换、Alembic、鉴权和中断工作流恢复尚未完成 |
 | 8 Budget Engine（已完成） | 从门票、餐饮、酒店和新增每日交通单价生成 Budget；按人数、两人一间及实际住宿夜数计算，0/null 分离，输出未知项与上限三态 | 人数、房间、夜数、临界值、未知费用、负数、单日和末日酒店测试；LangGraph 与 PUT 都覆盖 LLM/客户端总价 |
 | 9 Route Optimizer（已完成） | 复用 AmapService 的 RouteInfo、Tool Runtime 与 Redis 路线缓存；每天最多 6 点构建有向矩阵，固定首点作确定性最近邻排序；新增类型化路段和每日路线汇总 | 12 项专项测试覆盖可复现顺序、四种交通输入、并发/规模、不可达、分段与步行限制、取消和矩阵截止；不声称 TSP 最优或前端折线为真实路网 |
-| 10 Structured Planner | 改造 PLANNER_AGENT_PROMPT、_build_planner_query 和 _parse_response；模型从候选 ID 中选择，结果按 schema 返回；预算字段由代码补算 | 非法 JSON、未知 POI ID、越界日期被拒绝；有界格式修复；不恢复虚构 fallback；保留现有响应字段适配 |
+| 10 Structured Planner（已完成） | 私有 PlannerDraft 使用 extra=forbid；候选映射为 A/H 作用域 ID，服务端水合 POI 与请求事实；默认一次修复、50k 响应上限 | 13 项专项测试覆盖稳定 ID、可信水合、未知引用、日期/索引、额外字段、三餐和修复上限；真实模型遵循率、候选数量与 token 预算仍待评测/网关阶段 |
 | 11 Validator + Replan | 新增确定性 validator，LangGraph 按 violations 分支；检查预算、必去/避开、重复、时段、开放时间、交通和步行；Planner 仅处理重排及软偏好 | 每条约束有正反例；无解/达到最大轮数明确终止；修改计划后重算、重验 |
 | 12 RAG | 在候选景点 ID 上补官方开放时间/预约/无障碍等证据；输入 Planner 与 Validator | 引用来自真实 metadata（来源、抓取时间、适用日期）；无来源不编引用；缺证据返回不确定，而不是默认为开放 |
 | 13 Model Gateway | 在 llm_service.py 的现有 get_llm 边界集中 provider 配置、结构化输出适配、错误分类及用量记录 | 替身测试超时/限流/响应不兼容；明确 fallback 模型策略及总调用预算 |
@@ -39,6 +39,6 @@
 4. 输入无硬约束、输出无真实来源：先定义模型再建预算/路线/Validator，不能让模型输出金额充当预算引擎。
 5. Git 已初始化并有基线提交；每个后续阶段继续以真实 diff 和测试结果更新进度。
 
-## 下一阶段执行清单（Phase 10）
+## 下一阶段执行清单（Phase 11）
 
-改造 `PLANNER_AGENT_PROMPT`、`_build_planner_query` 与 `_parse_response`：给候选稳定 ID，让模型只能引用候选；使用明确 schema 解析计划，校验日期范围、引用和字段边界；格式错误只允许有限修复，最终失败必须返回结构化错误。路线和预算仍由后续确定性节点覆盖。
+新增类型化 violation 模型与确定性 Validator，检查日期、预算、must/avoid、重复景点、路线不可达、单段交通和每日步行；把结果写入 LangGraph state 并按是否通过分支。Replan 只把结构化 violations 和已有候选交给 Planner，设置最大轮数；达到上限或无法满足时明确失败。计划更新后同样重算并重验。

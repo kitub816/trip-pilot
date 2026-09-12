@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     route_concurrency: int = Field(default=3, ge=1, le=8)
     route_leg_timeout: float = Field(default=60, gt=0, le=180)
     route_matrix_timeout: float = Field(default=90, gt=0, le=300)
+    planner_repair_attempts: int = Field(default=1, ge=0, le=2)
+    planner_max_response_chars: int = Field(default=50000, ge=1000, le=200000)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
     def get_cors_origins_list(self) -> list[str]:

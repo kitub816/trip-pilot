@@ -19,12 +19,39 @@ from app.api import main
 from app.api.routes import trip, map as map_routes, poi
 from app.agents import trip_planner_agent as planner_module
 from app.services import amap_service, llm_service, unsplash_service
-from app.models.schemas import TripRequest, TripPlan
+from app.models.schemas import Location, POIInfo, TripRequest, TripPlan
 from app.logging_config import JsonFormatter, request_id
 
 REQUEST = dict(city="上海", start_date="2026-09-10", end_date="2026-09-11", travel_days=2,
                transportation="步行", accommodation="民宿", preferences=[], free_text_input="private-user-input")
 PLAN = dict(city="上海", start_date="2026-09-10", end_date="2026-09-11", days=[], overall_suggestions="test fixture")
+PLANNER_POI = POIInfo(
+    id="source-poi", name="测试景点", type="景点", address="测试地址",
+    location=Location(longitude=121.4, latitude=31.2),
+)
+PLANNER_DRAFT = {
+    "days": [
+        {
+            "date": date,
+            "day_index": index,
+            "description": "fixture",
+            "transportation": "步行",
+            "transportation_cost": 0,
+            "accommodation": "民宿",
+            "hotel": None,
+            "attractions": [{
+                "candidate_id": "A001", "visit_duration": 60,
+                "description": "fixture", "ticket_price": 0,
+            }],
+            "meals": [
+                {"type": meal_type, "name": meal_type, "estimated_cost": 0}
+                for meal_type in ("breakfast", "lunch", "dinner")
+            ],
+        }
+        for index, date in enumerate(("2026-09-10", "2026-09-11"))
+    ],
+    "overall_suggestions": "test fixture",
+}
 
 @pytest.fixture
 def client():
@@ -131,7 +158,7 @@ def make_planner():
     calls = []
     def invoke(messages, **kwargs):
         calls.append([dict(m) for m in messages])
-        return json.dumps(PLAN)
+        return json.dumps(PLANNER_DRAFT)
     llm = SimpleNamespace(invoke=invoke)
     # Real SDK history behavior, no tools/network; verify our lifecycle isolation.
     for name in ("planner_agent",):
@@ -141,13 +168,13 @@ def make_planner():
 
 def test_history_isolated_between_requests_and_cleared_on_failure():
     planner, calls = make_planner()
-    planner.plan_from_retrieval(TripRequest(**REQUEST), (), (), ())
-    planner.plan_from_retrieval(TripRequest(**{**REQUEST, "city":"北京"}), (), (), ())
+    planner.plan_from_retrieval(TripRequest(**REQUEST), (PLANNER_POI,), (), ())
+    planner.plan_from_retrieval(TripRequest(**{**REQUEST, "city":"北京"}), (PLANNER_POI,), (), ())
     assert len(calls) == 2 and all(len(messages) == 2 for messages in calls)
     assert all(agent._history == [] for agent in (planner.planner_agent,))
     planner.planner_agent.run = Mock(side_effect=RuntimeError("secret"))
     with pytest.raises(UpstreamError):
-        planner.plan_from_retrieval(TripRequest(**REQUEST), (), (), ())
+        planner.plan_from_retrieval(TripRequest(**REQUEST), (PLANNER_POI,), (), ())
     assert planner.planner_agent._history == []
     assert planner._run_lock.acquire(blocking=False)
     planner._run_lock.release()
@@ -163,11 +190,13 @@ def test_overlapping_plan_is_rejected_and_lock_recovers():
         return original(query)
     planner.planner_agent.run = blocked
     with ThreadPoolExecutor(max_workers=1) as pool:
-        pending = pool.submit(planner.plan_from_retrieval, TripRequest(**REQUEST), (), (), ())
+        pending = pool.submit(
+            planner.plan_from_retrieval, TripRequest(**REQUEST), (PLANNER_POI,), (), (),
+        )
         try:
             assert started.wait(3)
             with pytest.raises(ServiceBusy):
-                planner.plan_from_retrieval(TripRequest(**REQUEST), (), (), ())
+                planner.plan_from_retrieval(TripRequest(**REQUEST), (PLANNER_POI,), (), ())
         finally:
             release.set()
         assert pending.result(timeout=5).city == "上海"
