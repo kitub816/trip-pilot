@@ -21,6 +21,16 @@ class UpstreamTimeout(AppError):
     code = "UPSTREAM_TIMEOUT"
     message = "外部服务响应超时，请稍后重试"
 
+class ModelRateLimit(AppError):
+    status_code = 429
+    code = "MODEL_RATE_LIMIT"
+    message = "模型服务请求过于频繁，请稍后重试"
+
+class ModelCallBudgetExceeded(AppError):
+    status_code = 429
+    code = "MODEL_CALL_BUDGET_EXCEEDED"
+    message = "本次规划已达到模型调用上限，请稍后重试"
+
 class PlanParseError(AppError):
     status_code = 502
     code = "PLAN_PARSE_ERROR"

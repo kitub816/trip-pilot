@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-Phase 0–12 已实现，Phase 13–18 待完成。用户已授权逐阶段继续到最终阶段；每阶段独立验证、提交并归档文档。
+Phase 0–13 已实现，Phase 14–18 待完成。用户已授权逐阶段继续到最终阶段；每阶段独立验证、提交并归档文档。
 
 ## 当前架构
 
@@ -18,6 +18,7 @@ Phase 0–12 已实现，Phase 13–18 待完成。用户已授权逐阶段继�
 - 预算：门票、餐饮和交通按人数计算，酒店按两人一间及 `天数-1` 夜计算；0 与未知 null 分离，输出 unknown_items、完整性和预算上限三态。
 - 路线：每天最多 6 点构建有向矩阵，日内最多 3 个并发调用，单段 60 秒、每日矩阵 90 秒截止；固定首点的最近邻排序可复现，显式输出不可达、分段超时、步行超限和矩阵截断。
 - Planner：私有 `PlannerDraft` 禁止额外字段，景点/酒店只引用 `A001/H001` 作用域 ID；城市、日期、天气及 POI 身份由服务端水合。非法格式、未知 ID 和日期错位最多修复一次，仍失败则明确终止。
+- 模型：`ModelGateway` 在 Planner 外集中请求级调用上限、Prompt 上限、429/超时安全分类和本地 token 估算；初始规划、格式修复与 Replan 共用预算。
 - 校验：Validator 检查日期、预算、must/avoid、重复和路线告警；error 触发有上限 Replan，warning 保留不确定性。PUT 重算路线/预算后在持久化前复验。
 - RAG：`TravelEvidence` 要求 URL、抓取时间、适用日期及 verified/uncertain 状态；默认没有语料即为未知。Planner 可读取证据，Validator 只根据适用的 verified 闭园日期拒绝计划，不将缺失资料推断为开放。
 - 地图：按本地缓存的 amap-mcp-server 0.1.11 源码解析搜索、详情、天气、地理编码和路线；生产固定该版本。搜索不含坐标，详情提供坐标；路线结果有距离和时间，无前端路网折线。
@@ -41,6 +42,7 @@ Phase 0–12 已实现，Phase 13–18 待完成。用户已授权逐阶段继�
 | 10 | [Structured Planner](phase10.md)，提交 98c9402 |
 | 11 | [Validator + Replan](phase11.md)，提交 d49ae87 |
 | 12 | [来源可追溯旅行 RAG](phase12.md)，本阶段提交待创建 |
+| 13 | [Model Gateway](phase13.md)，本阶段提交待创建 |
 
 ## Phase 11 修改
 
@@ -49,6 +51,10 @@ Phase 0–12 已实现，Phase 13–18 待完成。用户已授权逐阶段继�
 ## Phase 12 修改
 
 新增文件式、来源可追溯的旅行证据服务与 Pydantic 模型。只有带 URL、抓取时间、适用期且标记为 verified 的闭园事实能触发 Validator 错误；无证据和 uncertain 事实显式保留为不确定。当前仓库没有真实官方语料，默认空 corpus 不会制造事实。
+
+## Phase 13 修改
+
+新增请求级 Model Gateway，限制单次规划的模型调用和 Prompt 尺寸，格式修复与重规划共享预算；记录本地 token 估算并将模型 429/超时归入安全错误。HelloAgents 未给出可审计 provider usage，故不产生虚构成本数据。
 
 ## Phase 10 修改
 
@@ -78,7 +84,7 @@ Phase 0–12 已实现，Phase 13–18 待完成。用户已授权逐阶段继�
 
 ## 实际验证
 
-`backend: python -m pytest tests -q`：**150 passed，2 skipped，10 warnings**。
+`backend: python -m pytest tests -q`：**153 passed，2 skipped，10 warnings**。
 
 真实 MySQL 8.4 一次性容器验证：`tests/test_phase7_persistence.py` **7 passed，10 warnings**；容器已删除。真实 Redis 阶段验证仍见 Phase 6 记录。
 `git diff --check`：通过。
@@ -91,7 +97,7 @@ Phase 0–12 已实现，Phase 13–18 待完成。用户已授权逐阶段继�
 
 - 高德 MCP 0.1.11 会把部分错误压成文字，无法可靠区分这些错误的限流/可重试性；运行时保守不重试这类错误。
 - 截止时间触发后仍需执行 SDK 的进程清理，实际返回可多出清理时间。当前 HTTP 同步路由不会在客户端断开时自动取消；原生检索协程本身已支持取消。
-- Planner LLM 仍是同步 HelloAgents 调用，共享实例拒绝重叠规划；结构化草稿已限制候选和日期，Validator 已覆盖当前有证据的硬约束，但修复/Replan 调用没有 token/成本总预算。
+- Planner LLM 仍是同步 HelloAgents 调用，共享实例拒绝重叠规划；已有调用/Prompt 上限和 token 估算，但 SDK 没有可靠 provider usage，尚无真实成本、fallback 或流式策略。
 - ToolResult 提供工具名、抓取时间、尝试次数和耗时；候选级引用和跨节点指标尚未接入。
 - Redis 已作为可选检索缓存接入；MySQL 已提供可选计划记录，前端尚未改为服务端读取；尚无 RAG/持久 checkpoint/部署与线上评测，不可宣称行程已通过硬约束验证。
 - MySQL 当前使用 `create_all`，没有 Alembic、鉴权、所有权或中断工作流恢复；`planning` 只用于识别未完成请求。
@@ -105,4 +111,4 @@ Phase 0–12 已实现，Phase 13–18 待完成。用户已授权逐阶段继�
 
 ## 下一阶段
 
-Phase 13：集中 LLM provider、结构化输出、错误分类和请求级调用/用量预算。
+Phase 14：把现有安全日志关联到 LangGraph 节点、工具、缓存、模型调用和校验结果。

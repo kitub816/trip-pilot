@@ -18,7 +18,7 @@ from ..models.schemas import (
 from ..models.validation import PlanViolation
 from ..models.knowledge import TravelEvidence
 from ..services.constraint_service import TravelConstraints
-from ..services.llm_service import get_llm
+from ..services.llm_service import ModelGateway, create_model_gateway, get_llm
 
 
 PLANNER_AGENT_PROMPT = """你是行程规划专家。根据服务端提供的候选ID生成旅行计划。
@@ -82,6 +82,7 @@ class MultiAgentTripPlanner:
         self._repair_attempts = settings.planner_repair_attempts
         self._max_response_chars = settings.planner_max_response_chars
         self.llm = get_llm()
+        self._gateway = create_model_gateway()
         try:
             self.planner_agent = SimpleAgent(
                 name="行程规划专家", llm=self.llm, system_prompt=PLANNER_AGENT_PROMPT,
@@ -105,12 +106,16 @@ class MultiAgentTripPlanner:
         *,
         revision_instructions: str = "",
         evidence: tuple[TravelEvidence, ...] = (),
+        _continue_request: bool = False,
     ) -> TripPlan:
         """Plan from typed candidates and allow only a bounded format repair."""
         if not self._run_lock.acquire(blocking=False):
             raise ServiceBusy()
         try:
             self._clear_history()
+            gateway = getattr(self, "_gateway", None)
+            if gateway is not None and not _continue_request:
+                gateway.begin_request()
             logger.info("planning.started")
             attraction_payload, attraction_catalog = self._candidate_catalog(attractions, "A")
             hotel_payload, hotel_catalog = self._candidate_catalog(hotels, "H")
@@ -123,7 +128,7 @@ class MultiAgentTripPlanner:
             )
             if revision_instructions:
                 query += f"\n必须修正的确定性约束：\n{revision_instructions}"
-            response = self.planner_agent.run(query)
+            response = self._run_model(query)
             plan: TripPlan | None = None
             repair_attempts = getattr(self, "_repair_attempts", 1)
             for attempt in range(repair_attempts + 1):
@@ -136,7 +141,7 @@ class MultiAgentTripPlanner:
                     if attempt >= repair_attempts:
                         raise
                     logger.info("planning.format_repair", extra={"attempt": attempt + 1})
-                    response = self.planner_agent.run(PLANNER_REPAIR_PROMPT)
+                    response = self._run_model(PLANNER_REPAIR_PROMPT)
             if plan is None:
                 raise PlanParseError()
             logger.info("planning.completed")
@@ -168,6 +173,7 @@ class MultiAgentTripPlanner:
         return self.plan_from_retrieval(
             request, attractions, weather, hotels, revision_instructions=revision,
             evidence=evidence,
+            _continue_request=True,
         )
 
     def plan_trip(self, request: TravelConstraints) -> TripPlan:
@@ -182,6 +188,12 @@ class MultiAgentTripPlanner:
         return self.plan_from_retrieval(
             request, context.attractions, context.weather, context.hotels,
         )
+
+    def _run_model(self, prompt: str) -> str:
+        gateway: ModelGateway | None = getattr(self, "_gateway", None)
+        if gateway is None:
+            return self.planner_agent.run(prompt)
+        return gateway.run(self.planner_agent, prompt)
 
     def _build_planner_query(
         self,
