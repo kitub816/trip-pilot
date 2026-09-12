@@ -16,6 +16,7 @@ from ..models.schemas import (
     Attraction, DayPlan, Hotel, Meal, POIInfo, TripPlan, WeatherInfo,
 )
 from ..models.validation import PlanViolation
+from ..models.knowledge import TravelEvidence
 from ..services.constraint_service import TravelConstraints
 from ..services.llm_service import get_llm
 
@@ -103,6 +104,7 @@ class MultiAgentTripPlanner:
         hotels: tuple[POIInfo, ...],
         *,
         revision_instructions: str = "",
+        evidence: tuple[TravelEvidence, ...] = (),
     ) -> TripPlan:
         """Plan from typed candidates and allow only a bounded format repair."""
         if not self._run_lock.acquire(blocking=False):
@@ -117,6 +119,7 @@ class MultiAgentTripPlanner:
                 json.dumps(attraction_payload, ensure_ascii=False),
                 json.dumps([item.model_dump(mode="json") for item in weather], ensure_ascii=False),
                 json.dumps(hotel_payload, ensure_ascii=False),
+                json.dumps([item.model_dump(mode="json") for item in evidence], ensure_ascii=False),
             )
             if revision_instructions:
                 query += f"\n必须修正的确定性约束：\n{revision_instructions}"
@@ -155,6 +158,7 @@ class MultiAgentTripPlanner:
         weather: tuple[WeatherInfo, ...],
         hotels: tuple[POIInfo, ...],
         violations: tuple[PlanViolation, ...],
+        evidence: tuple[TravelEvidence, ...] = (),
     ) -> TripPlan:
         """Retry planning with bounded, typed hard-constraint findings only."""
         revision = json.dumps(
@@ -163,6 +167,7 @@ class MultiAgentTripPlanner:
         )
         return self.plan_from_retrieval(
             request, attractions, weather, hotels, revision_instructions=revision,
+            evidence=evidence,
         )
 
     def plan_trip(self, request: TravelConstraints) -> TripPlan:
@@ -184,6 +189,7 @@ class MultiAgentTripPlanner:
         attractions: str,
         weather: str,
         hotels: str = "",
+        evidence: str = "[]",
     ) -> str:
         query = f"""请根据以下信息生成{request.city}的{request.travel_days}天旅行计划：
 
@@ -209,6 +215,10 @@ class MultiAgentTripPlanner:
 
 酒店候选（只能引用candidate_id）：
 {hotels}
+
+景点事实证据（仅当 status 为 verified 且适用日期覆盖行程时才可当作事实；
+没有证据代表未知，不能自行假设开放、可预约或无障碍）：
+{evidence}
 
 输出要求：
 1. 日期与day_index覆盖请求中的每一天且顺序一致

@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     planner_repair_attempts: int = Field(default=1, ge=0, le=2)
     planner_max_response_chars: int = Field(default=50000, ge=1000, le=200000)
     max_replan_attempts: int = Field(default=1, ge=0, le=2)
+    rag_knowledge_path: str = ""
+    rag_max_evidence_per_poi: int = Field(default=3, ge=1, le=10)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
     def get_cors_origins_list(self) -> list[str]:

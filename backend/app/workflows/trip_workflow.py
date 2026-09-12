@@ -8,10 +8,12 @@ from ..agents.trip_planner_agent import MultiAgentTripPlanner, get_trip_planner_
 from ..errors import AppError, PlanValidationError, upstream_failure
 from ..models.schemas import TripPlan
 from ..models.validation import PlanViolation
+from ..models.knowledge import TravelEvidence
 from ..services.constraint_service import TravelConstraints
 from ..config import get_settings
 from ..services.budget_service import BudgetEngine, get_budget_engine
 from ..services.retrieval_service import TripRetrievalResult, retrieve_trip_context
+from ..services.rag_service import retrieve_trip_evidence
 from ..services.route_service import RouteOptimizer, get_route_optimizer
 from ..services.validation_service import PlanValidator, get_plan_validator
 
@@ -26,6 +28,7 @@ class TripWorkflowState(TypedDict):
     plan: TripPlan | None
     error: AppError | None
     retrieval: TripRetrievalResult | None
+    evidence: tuple[TravelEvidence, ...]
     violations: tuple[PlanViolation, ...]
     replan_attempts: int
 
@@ -79,7 +82,7 @@ class TripPlanningWorkflow:
     def plan(self, constraints: TravelConstraints) -> TripPlan:
         state = self._graph.invoke({
             "constraints": constraints, "status": "planning", "plan": None, "error": None,
-            "retrieval": None, "violations": (), "replan_attempts": 0,
+            "retrieval": None, "violations": (), "replan_attempts": 0, "evidence": (),
         })
         error = state["error"]
         if error is not None:
@@ -92,20 +95,29 @@ class TripPlanningWorkflow:
     def _plan(self, state: TripWorkflowState) -> dict[str, object]:
         try:
             retrieval = retrieve_trip_context(state["constraints"])
+            evidence_result = retrieve_trip_evidence(
+                retrieval.attractions, state["constraints"].start_date,
+                state["constraints"].end_date,
+            )
             planner = self._planner_factory()
             if hasattr(planner, "plan_from_retrieval"):
-                plan = planner.plan_from_retrieval(
-                    state["constraints"], retrieval.attractions, retrieval.weather, retrieval.hotels
+                arguments = (
+                    state["constraints"], retrieval.attractions, retrieval.weather, retrieval.hotels,
                 )
+                if evidence_result.evidence:
+                    plan = planner.plan_from_retrieval(*arguments, evidence=evidence_result.evidence)
+                else:
+                    plan = planner.plan_from_retrieval(*arguments)
             else:
                 # Keeps isolated test doubles and older integrations compatible.
                 plan = planner.plan_trip(state["constraints"])
             return {
                 "plan": plan, "status": "routing", "error": None, "retrieval": retrieval,
-                "violations": (), "replan_attempts": 0,
+                "violations": (), "replan_attempts": 0, "evidence": evidence_result.evidence,
             }
         except AppError as error:
-            return {"plan": None, "status": "failed", "error": error, "retrieval": None}
+            return {"plan": None, "status": "failed", "error": error, "retrieval": None,
+                    "evidence": ()}
 
     @staticmethod
     def _next_node(state: TripWorkflowState) -> Literal["route", "failed"]:
@@ -143,7 +155,10 @@ class TripPlanningWorkflow:
         plan = state["plan"]
         if plan is None:
             return {"status": "failed", "error": upstream_failure(RuntimeError("missing plan"))}
-        result = self._validator.validate(plan, state["constraints"])
+        if state["evidence"]:
+            result = self._validator.validate(plan, state["constraints"], state["evidence"])
+        else:
+            result = self._validator.validate(plan, state["constraints"])
         if result.is_valid:
             return {"status": "completed", "violations": tuple(result.violations), "error": None}
         if state["replan_attempts"] >= self._max_replan_attempts or state["retrieval"] is None:
@@ -169,10 +184,14 @@ class TripPlanningWorkflow:
             planner = self._planner_factory()
             if not hasattr(planner, "replan_from_retrieval"):
                 raise PlanValidationError()
-            plan = planner.replan_from_retrieval(
+            arguments = (
                 state["constraints"], retrieval.attractions, retrieval.weather,
                 retrieval.hotels, state["violations"],
             )
+            if state["evidence"]:
+                plan = planner.replan_from_retrieval(*arguments, evidence=state["evidence"])
+            else:
+                plan = planner.replan_from_retrieval(*arguments)
             return {
                 "plan": plan, "status": "routing", "error": None,
                 "replan_attempts": state["replan_attempts"] + 1,

@@ -1,10 +1,11 @@
 """Deterministic hard-constraint validation for a fully derived TripPlan."""
 
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 from ..errors import PlanValidationError
 from ..models.schemas import DayPlan, TripPlan
+from ..models.knowledge import TravelEvidence
 from ..models.validation import PlanValidationResult, PlanViolation
 from .constraint_service import TravelConstraints
 
@@ -14,16 +15,22 @@ class PlanValidator:
 
     def validate(
         self, plan: TripPlan, constraints: TravelConstraints,
+        evidence: tuple[TravelEvidence, ...] = (),
     ) -> PlanValidationResult:
         violations: list[PlanViolation] = []
         self._validate_dates(plan, constraints, violations)
         self._validate_budget(plan, constraints, violations)
         self._validate_places(plan, constraints, violations)
         self._validate_routes(plan, violations)
+        if evidence:
+            self._validate_evidence(plan, evidence, violations)
         return PlanValidationResult(violations=violations)
 
-    def validate_or_raise(self, plan: TripPlan, constraints: TravelConstraints) -> None:
-        if self.validate(plan, constraints).is_valid:
+    def validate_or_raise(
+        self, plan: TripPlan, constraints: TravelConstraints,
+        evidence: tuple[TravelEvidence, ...] = (),
+    ) -> None:
+        if self.validate(plan, constraints, evidence).is_valid:
             return
         raise PlanValidationError()
 
@@ -115,6 +122,29 @@ class PlanValidator:
                     self._add(
                         violations, mapped[0], mapped[1], day_index=day_index,
                     )
+
+    def _validate_evidence(
+        self, plan: TripPlan, evidence: tuple[TravelEvidence, ...],
+        violations: list[PlanViolation],
+    ) -> None:
+        by_poi: dict[str, list[TravelEvidence]] = {}
+        for item in evidence:
+            by_poi.setdefault(item.poi_id, []).append(item)
+        for position, day in enumerate(plan.days):
+            day_index = day.day_index if day.day_index >= 0 else position
+            try:
+                plan_date = date.fromisoformat(day.date)
+            except ValueError:
+                continue
+            for attraction in day.attractions:
+                records = [item for item in by_poi.get(attraction.poi_id, [])
+                           if item.status == "verified" and item.applies_on(plan_date)]
+                if not records:
+                    self._add(violations, "EVIDENCE_UNAVAILABLE", "warning",
+                              day_index=day_index, subject=attraction.name)
+                elif any(plan_date in item.facts.closed_dates for item in records):
+                    self._add(violations, "ATTRACTION_CLOSED", "error",
+                              day_index=day_index, subject=attraction.name)
 
     @staticmethod
     def _matches(constraint_name: str, attraction_name: str) -> bool:
