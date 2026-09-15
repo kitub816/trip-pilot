@@ -1,5 +1,6 @@
 """Request-scoped LangGraph adapter for the legacy trip planner."""
 
+import logging
 from typing import Callable, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -93,6 +94,7 @@ class TripPlanningWorkflow:
         return plan
 
     def _plan(self, state: TripWorkflowState) -> dict[str, object]:
+        self._log_node("plan")
         try:
             retrieval = retrieve_trip_context(state["constraints"])
             evidence_result = retrieve_trip_evidence(
@@ -124,6 +126,7 @@ class TripPlanningWorkflow:
         return "route" if state["status"] == "routing" else "failed"
 
     def _route(self, state: TripWorkflowState) -> dict[str, object]:
+        self._log_node("route")
         plan = state["plan"]
         if plan is None:
             return {"status": "failed", "error": upstream_failure(RuntimeError("missing plan"))}
@@ -134,6 +137,7 @@ class TripPlanningWorkflow:
         }
 
     def _budget(self, state: TripWorkflowState) -> dict[str, object]:
+        self._log_node("budget")
         plan = state["plan"]
         if plan is None:
             return {"status": "failed", "error": upstream_failure(RuntimeError("missing plan"))}
@@ -152,6 +156,7 @@ class TripPlanningWorkflow:
         return "validate" if state["status"] == "validating" else "failed"
 
     def _validate(self, state: TripWorkflowState) -> dict[str, object]:
+        self._log_node("validate")
         plan = state["plan"]
         if plan is None:
             return {"status": "failed", "error": upstream_failure(RuntimeError("missing plan"))}
@@ -177,6 +182,7 @@ class TripPlanningWorkflow:
         return "failed"
 
     def _replan(self, state: TripWorkflowState) -> dict[str, object]:
+        self._log_node("replan")
         retrieval = state["retrieval"]
         if retrieval is None:
             return {"status": "failed", "error": PlanValidationError()}
@@ -204,8 +210,13 @@ class TripPlanningWorkflow:
         """Explicit terminal node reserved for future observability and replan branches."""
         return {}
 
+    @staticmethod
+    def _log_node(node: str) -> None:
+        logger.info("workflow.node.started", extra={"workflow_node": node})
+
 
 _trip_workflow: TripPlanningWorkflow | None = None
+logger = logging.getLogger("trippilot.workflow")
 
 
 def get_trip_workflow() -> TripPlanningWorkflow:

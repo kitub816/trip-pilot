@@ -1,5 +1,6 @@
 """FastAPI app, safe error contract and application lifecycle."""
 import logging
+import time
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
@@ -65,6 +66,7 @@ def create_app() -> FastAPI:
     async def request_context(request: Request, call_next):
         # Generate rather than trust an arbitrary user-controlled correlation header.
         token = request_id.set(uuid4().hex)
+        started = time.monotonic()
         try:
             try:
                 response = await call_next(request)
@@ -72,14 +74,17 @@ def create_app() -> FastAPI:
                 logger.error("request.unhandled_error")
                 response = error_response(500, "INTERNAL_ERROR", "服务内部错误，请稍后重试")
             response.headers["X-Request-ID"] = request_id.get()
-            logger.info("request.completed.%s", response.status_code)
+            logger.info("request.completed", extra={
+                "status_code": response.status_code,
+                "duration_ms": round((time.monotonic() - started) * 1000, 3),
+            })
             return response
         finally:
             request_id.reset(token)
 
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError):
-        logger.warning("request.failed.%s", exc.code)
+        logger.warning("request.failed", extra={"error_code": exc.code})
         return error_response(exc.status_code, exc.code, exc.message)
 
     @app.exception_handler(RequestValidationError)

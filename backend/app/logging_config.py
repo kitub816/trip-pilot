@@ -5,13 +5,19 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 
 request_id: ContextVar[str] = ContextVar("request_id", default="-")
+workflow_node: ContextVar[str] = ContextVar("workflow_node", default="-")
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         # Omit exception text/tracebacks and arbitrary extra fields.
-        return json.dumps({"time": datetime.now(timezone.utc).isoformat(), "level": record.levelname,
-                           "event": "mcp.transport_event" if record.name.startswith("mcp.") else record.getMessage(),
-                           "request_id": request_id.get()}, ensure_ascii=False)
+        payload = {"time": datetime.now(timezone.utc).isoformat(), "level": record.levelname,
+                   "event": "mcp.transport_event" if record.name.startswith("mcp.") else record.getMessage(),
+                   "request_id": request_id.get(), "workflow_node": workflow_node.get()}
+        for name in ("duration_ms", "status_code", "error_code", "tool", "cache_operation"):
+            value = getattr(record, name, None)
+            if value is not None:
+                payload[name] = value
+        return json.dumps(payload, ensure_ascii=False)
 
 def configure_logging(level: str) -> None:
     logger = logging.getLogger("trippilot")
