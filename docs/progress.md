@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-Phase 0–14 已实现，Phase 15–18 待完成。用户已授权逐阶段继续到最终阶段；每阶段独立验证、提交并归档文档。
+Phase 0–15 已实现，Phase 16–18 待完成。用户已授权逐阶段继续到最终阶段；每阶段独立验证、提交并归档文档。
 
 ## 当前架构
 
@@ -44,7 +44,8 @@ Phase 0–14 已实现，Phase 15–18 待完成。用户已授权逐阶段继�
 | 11 | [Validator + Replan](phase11.md)，提交 d49ae87 |
 | 12 | [来源可追溯旅行 RAG](phase12.md)，本阶段提交待创建 |
 | 13 | [Model Gateway](phase13.md)，本阶段提交待创建 |
-| 14 | [安全可观测性](phase14.md)，本阶段提交待创建 |
+| 14 | [安全可观测性](phase14.md)，提交 bd2318b |
+| 15 | [离线评测基线](phase15.md)，提交待创建 |
 
 ## Phase 11 修改
 
@@ -90,7 +91,7 @@ JSON 日志补充请求耗时、状态码、稳定错误码和工作流节点名
 
 ## 实际验证
 
-`backend: python -m pytest tests -q`：**153 passed，2 skipped，10 warnings**。
+`backend: python -m pytest tests -q`：**154 passed，2 skipped，10 warnings**。
 
 真实 MySQL 8.4 一次性容器验证：`tests/test_phase7_persistence.py` **7 passed，10 warnings**；容器已删除。真实 Redis 阶段验证仍见 Phase 6 记录。
 `git diff --check`：通过。
@@ -117,4 +118,4 @@ JSON 日志补充请求耗时、状态码、稳定错误码和工作流节点名
 
 ## 下一阶段
 
-Phase 15：基于已有离线 fixtures 建立可复现的约束、工具和计划评测基线；只报告实测值。
+Phase 16：改进前端约束输入、真实状态和服务端编辑校验链路。

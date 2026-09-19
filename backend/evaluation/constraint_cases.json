@@ -1,0 +1,5 @@
+[
+  {"id":"valid_two_day","request":{"city":"上海","start_date":"2026-10-01","end_date":"2026-10-02","transportation":"步行","accommodation":"民宿"},"expected":"accepted"},
+  {"id":"reversed_dates","request":{"city":"上海","start_date":"2026-10-02","end_date":"2026-10-01","transportation":"步行","accommodation":"民宿"},"expected":"rejected"},
+  {"id":"conflicting_places","request":{"city":"上海","start_date":"2026-10-01","end_date":"2026-10-01","transportation":"步行","accommodation":"民宿","must_visit":["外滩"],"avoid_places":["外滩"]},"expected":"rejected"}
+]
