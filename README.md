@@ -1,214 +1,83 @@
-# HelloAgents智能旅行助手 🌍✈️
+# TripPilot 智能旅行助手
 
-> TripPilot 当前完成 Phase 2（Constraint Engine）。约束接口见 [Phase 2 说明](docs/phase2.md)，真实进度见 [progress.md](docs/progress.md)。下方保留原教程介绍；地图旁路解析尚未实现，当前明确返回未就绪，前端连线不是实际导航路线。
+TripPilot 基于 Datawhale Hello-Agents 第 13 章旅行助手源码渐进重构。当前实现是一个可离线测试的工程化原型：FastAPI 接收结构化约束，LangGraph 编排检索、规划、路线、预算、验证和有上限重规划；高德 MCP 由确定性 Service 调用，HelloAgents SimpleAgent 只负责从候选中生成计划草稿。Vue 3 前端展示结果；Redis 与 MySQL 可选，Docker Compose 提供完整本地服务组合。
 
-基于HelloAgents框架构建的智能旅行规划助手,集成高德地图MCP服务,提供个性化的旅行计划生成。
+## 当前请求链路
 
-## ✨ 功能特点
-
-- 🤖 **AI驱动的旅行规划**: 基于HelloAgents框架的SimpleAgent,智能生成详细的多日旅程
-- 🗺️ **高德地图集成**: 通过MCP协议接入高德地图服务,支持景点搜索、路线规划、天气查询
-- 🧠 **智能工具调用**: Agent自动调用高德地图MCP工具,获取实时POI、路线和天气信息
-- 🎨 **现代化前端**: Vue3 + TypeScript + Vite,响应式设计,流畅的用户体验
-- 📱 **完整功能**: 包含住宿、交通、餐饮和景点游览时间推荐
-
-## 🏗️ 技术栈
-
-### 后端
-- **框架**: HelloAgents (基于SimpleAgent)
-- **API**: FastAPI
-- **MCP工具**: amap-mcp-server (高德地图)
-- **LLM**: 支持多种LLM提供商(OpenAI, DeepSeek等)
-
-### 前端
-- **框架**: Vue 3 + TypeScript
-- **构建工具**: Vite
-- **UI组件库**: Ant Design Vue
-- **地图服务**: 高德地图 JavaScript API
-- **HTTP客户端**: Axios
-
-## 📁 项目结构
-
-```
-helloagents-trip-planner/
-├── backend/                    # 后端服务
-│   ├── app/
-│   │   ├── agents/            # Agent实现
-│   │   │   └── trip_planner_agent.py
-│   │   ├── api/               # FastAPI路由
-│   │   │   ├── main.py
-│   │   │   └── routes/
-│   │   │       ├── trip.py
-│   │   │       └── map.py
-│   │   ├── services/          # 服务层
-│   │   │   ├── amap_service.py
-│   │   │   └── llm_service.py
-│   │   ├── models/            # 数据模型
-│   │   │   └── schemas.py
-│   │   └── config.py          # 配置管理
-│   ├── requirements.txt
-│   ├── .env.example
-│   └── .gitignore
-├── frontend/                   # 前端应用
-│   ├── src/
-│   │   ├── components/        # Vue组件
-│   │   ├── services/          # API服务
-│   │   ├── types/             # TypeScript类型
-│   │   └── views/             # 页面视图
-│   ├── package.json
-│   └── vite.config.ts
-└── README.md
+```text
+Vue Home → POST /api/trip/plan → TripRequest / TravelConstraints
+  → LangGraph plan：异步并发检索 POI、酒店和天气 → 候选 POI ID
+  → 本地来源证据检索 → PlannerDraft（LLM 只选候选 ID）
+  → 服务端水合 TripPlan → RouteOptimizer → BudgetEngine
+  → PlanValidator → 首次硬约束违规时最多一次 Replan
+  → 可选 MySQL PlanStore → Vue Result
 ```
 
-## 🚀 快速开始
+路线、预算、日期和硬约束由 Python 代码计算。路线是有界有向矩阵上的固定首点最近邻排序；地图上的点位不等于真实道路折线。开放/闭园判断只使用来源 URL、抓取时间和适用期齐全且标记为 verified 的证据。仓库未内置官方景区语料，默认没有这类事实时返回“不确定”。
 
-### 前提条件
+## 本地运行
 
-- Python 3.10+
-- Node.js 16+
-- 高德地图API密钥 (Web服务API和Web端(JS API))
-- LLM API密钥 (OpenAI/DeepSeek等)
+要求 Python 3.10、Node.js 22、`uvx`，以及你自己的高德 Web 服务 Key 和 LLM Key/模型。前端地图需要高德 JS Key。
 
-### 后端安装
-
-1. 进入后端目录
-```bash
+```powershell
 cd backend
+Copy-Item .env.example .env
+# 填写 AMAP_API_KEY、LLM_API_KEY、LLM_MODEL_ID
+python -m pip install -r requirements-dev.txt
+python run.py
 ```
 
-2. 创建虚拟环境
-```bash
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-```
+另开终端：
 
-3. 安装依赖
-```bash
-pip install -r requirements.txt
-```
-
-4. 配置环境变量
-```bash
-cp .env.example .env
-# 编辑.env文件,填入你的API密钥
-```
-
-5. 启动后端服务
-```bash
-uvicorn app.api.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### 前端安装
-
-1. 进入前端目录
-```bash
+```powershell
 cd frontend
-```
-
-2. 安装依赖
-```bash
-npm install
-```
-
-3. 配置环境变量
-```bash
-# 创建.env文件, 填入高德地图Web API Key 和 Web端JS API Key
-cp .env.example .env
-```
-
-4. 启动开发服务器
-```bash
+Copy-Item .env.example .env
+# 填写 VITE_AMAP_WEB_JS_KEY；跨端开发可设置 VITE_API_BASE_URL=http://localhost:8000
+npm ci
 npm run dev
 ```
 
-5. 打开浏览器访问 `http://localhost:5173`
+开发前端在 `http://localhost:5173`；API 文档在 `http://localhost:8000/docs`。后端启动时会检查地图和模型配置。不要提交 `.env`。
 
-## 📝 使用指南
+## Docker Compose
 
-1. 在首页填写旅行信息:
-   - 目的地城市
-   - 旅行日期和天数
-   - 交通方式偏好
-   - 住宿偏好
-   - 旅行风格标签
+仓库根目录复制 `.env.example` 为 `.env`，填入高德、LLM 与 MySQL 密码，再运行：
 
-2. 点击"生成旅行计划"按钮
-
-3. 系统将:
-   - 调用HelloAgents Agent生成初步计划
-   - Agent自动调用高德地图MCP工具搜索景点
-   - Agent获取天气信息和路线规划
-   - 整合所有信息生成完整行程
-
-4. 查看结果:
-   - 每日详细行程
-   - 景点信息与地图标记
-   - 交通路线规划
-   - 天气预报
-   - 餐饮推荐
-
-## 🔧 核心实现
-
-### HelloAgents Agent集成
-
-```python
-from hello_agents import SimpleAgent, HelloAgentsLLM
-from hello_agents.tools import MCPTool
-
-# 创建高德地图MCP工具
-amap_tool = MCPTool(
-    name="amap",
-    server_command=["uvx", "amap-mcp-server"],
-    env={"AMAP_MAPS_API_KEY": "your_api_key"},
-    auto_expand=True
-)
-
-# 创建旅行规划Agent
-agent = SimpleAgent(
-    name="旅行规划助手",
-    llm=HelloAgentsLLM(),
-    system_prompt="你是一个专业的旅行规划助手..."
-)
-
-# 添加工具
-agent.add_tool(amap_tool)
+```powershell
+docker compose build
+docker compose up -d
 ```
 
-### MCP工具调用
+默认前端端口为 `http://localhost:8080`，Nginx 同源代理 `/api`。Compose 包含 backend、frontend、Redis 和 MySQL。镜像内安装 `uv`，运行时可以用 `uvx` 启动固定版本 `amap-mcp-server==0.1.11`。本机已实际构建前后端镜像，并用测试占位凭据验证四服务启动、首页与 `/api/trip/health` 返回 200；占位凭据无法验证真实旅行规划。
 
-Agent可以自动调用以下高德地图MCP工具:
-- `maps_text_search`: 搜索景点POI
-- `maps_weather`: 查询天气
-- `maps_direction_walking_by_address`: 步行路线规划
-- `maps_direction_driving_by_address`: 驾车路线规划
-- `maps_direction_transit_integrated_by_address`: 公共交通路线规划
+## API 与状态
 
-## 📄 API文档
+- `POST /api/trip/plan`：生成计划。支持日期、交通/住宿、人数、CNY 预算、必去/避开地点、每日步行及单段交通上限。
+- `GET /api/trip/plans/{plan_id}`：读取可选 MySQL 中的计划。
+- `PUT /api/trip/plans/{plan_id}`：携带 `expected_version` 更新；后端重算路线和预算，验证通过后才写新版本。
+- `GET /health`：进程存活；`GET /api/trip/health`：配置检查，不探测外部服务。
 
-启动后端服务后,访问 `http://localhost:8000/docs` 查看完整的API文档。
+未配置数据库时，POST 仍可返回计划，但不会产生 plan_id；前端此时不提供服务端编辑。MySQL 保存的是业务计划记录，不是 LangGraph checkpoint，尚不支持中断后恢复图执行。
 
-主要端点:
-- `POST /api/trip/plan` - 生成旅行计划
-- `GET /api/map/poi` - 搜索POI
-- `GET /api/map/weather` - 查询天气
-- `POST /api/map/route` - 规划路线
+## 验证与结果边界
 
-## 🤝 贡献指南
+```powershell
+cd backend
+python -m pytest tests -q
+python -m evaluation.benchmark
+cd ..\frontend
+npm run build
+```
 
-欢迎提交Pull Request或Issue!
+最近一次后端完整离线回归为 **154 passed、2 skipped**；前端生产构建通过。固定约束评测集为 **3/3**，数据和运行器分别在 `backend/evaluation/constraint_cases.json`、`backend/evaluation/benchmark.py`。一次本机测量的约束解析 P50/P95 见 [原始结果](docs/benchmark_results.json)；它不包含地图、LLM、路线或网络耗时，也不代表线上规划性能。未测量真实 provider token、成本、规划成功率或缓存命中率，因此不提供这些数字。
 
-## 📜 开源协议
+## 已知限制
 
-CC BY-NC-SA 4.0
+- 自由文本当前没有独立的结构化约束提取器；硬约束以表单字段为准。
+- 默认 RAG 语料为空；没有官方资料时不声称景点开放、无需预约或无障碍。
+- DayPlan 没有具体到访时段，尚不能检查完整时间冲突；预约/无障碍也没有对应硬约束输入。
+- 规划调用仍是同步 HelloAgents；HTTP 客户端取消不保证取消后端计算。
+- LangGraph 没有持久 checkpoint；MySQL 不能恢复中断的节点执行。
+- 前端缺少浏览器端到端测试，构建仍提示大包；Docker 构建中 `npm ci` 报告的依赖告警需要逐项审计。GitHub Actions 工作流已提交，但尚未在远端验证。
 
-## 🙏 致谢
-
-- [HelloAgents](https://github.com/datawhalechina/Hello-Agents) - 智能体教程
-- [HelloAgents框架](https://github.com/jjyaoao/HelloAgents) - 智能体框架
-- [高德地图开放平台](https://lbs.amap.com/) - 地图服务
-- [amap-mcp-server](https://github.com/sugarforever/amap-mcp-server) - 高德地图MCP服务器
-
----
-
-**HelloAgents智能旅行助手** - 让旅行计划变得简单而智能 🌈
-
+阶段过程和实测证据见 [项目进度](docs/progress.md)、[重构计划](docs/refactor_plan.md) 与 [Phase 0 架构分析](docs/current_architecture.md)。

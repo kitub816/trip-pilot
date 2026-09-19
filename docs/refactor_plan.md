@@ -1,6 +1,6 @@
 # TripPilot 渐进重构计划
 
-本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–11 已完成；Phase 12–18 为待办。实际范围、验证与限制见 [progress.md](progress.md)。
+本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–18 的阶段代码与记录已落地；剩余规格缺口见 progress。实际范围、验证与限制见 [progress.md](progress.md)。
 
 ## 迁移原则与落点
 
@@ -24,12 +24,12 @@
 | 10 Structured Planner（已完成） | 私有 PlannerDraft 使用 extra=forbid；候选映射为 A/H 作用域 ID，服务端水合 POI 与请求事实；默认一次修复、50k 响应上限 | 13 项专项测试覆盖稳定 ID、可信水合、未知引用、日期/索引、额外字段、三餐和修复上限；真实模型遵循率、候选数量与 token 预算仍待评测/网关阶段 |
 | 11 Validator + Replan（已完成） | 新增类型化 PlanViolation/Result 和确定性 Validator；检查当前有证据的日期、预算、must/avoid、重复与路线告警；LangGraph 以 error violations 触发默认一次 Replan，PUT 写前复验 | 11 项专项测试覆盖正反例、修正规则、一次成功/上限终止和 PUT 拒写；开放时间、时段和预约没有证据，明确留给 RAG 阶段 |
 | 12 RAG（已完成，限制见 progress） | 以候选景点 ID 读取带来源、抓取时间、适用期和状态的本地证据；输入 Planner，Validator 仅检查适用的 verified 闭园事实 | 默认空语料和损坏语料明确返回不确定；未提交虚构官方资料，远程知识库/前端引用展示待后续 |
-| 13 Model Gateway | 在 llm_service.py 的现有 get_llm 边界集中 provider 配置、结构化输出适配、错误分类及用量记录 | 替身测试超时/限流/响应不兼容；明确 fallback 模型策略及总调用预算 |
-| 14 Observability | 扩展 Phase 1 日志关联到图节点、MCP、缓存、模型和校验；避免打印完整用户输入 | 一个请求可追踪各阶段和失败原因；记录真实耗时、用量与重试，不把模拟进度当指标 |
-| 15 Evaluation | 新建离线约束/工具/计划数据集和在线可选 benchmark；为现有失败探针建立回归 | 固定样例、随机性与环境说明；真实计算提取准确率、满足率、工具/计划成功率、P50/P95、Token/成本和命中率 |
-| 16 Frontend | 延续 Home/Result；统一图片 API baseURL、取消/限流/去重；地图独立加载；增加结构化约束输入及真实状态；编辑调用服务端校验重算；地图输出处理不可信文本 | build 通过；浏览器验证错误/降级/恢复、编辑预算更新、非 localhost 部署；保留导出能力 |
-| 17 Docker + CI | 基于 backend/requirements.txt、frontend/package-lock.json 明确可重复运行环境；容器包含所需 MCP 启动依赖 | 干净环境构建、离线回归和启动冒烟；凭据从环境注入 |
-| 18 README/Benchmark/Resume | 修正当前 README 对路线和工具能力的过度描述；报告真实架构与测试限制 | 每条性能数字可追溯到 benchmark 数据及运行条件；无测量不填写 |
+| 13 Model Gateway（已完成） | 新增请求级 ModelGateway，集中调用次数、Prompt 长度、本地 token 估算和 429/超时分类；Planner 初始调用、修复和 Replan 共用预算 | 离线替身验证边界；SDK 缺可靠 provider usage，未实现真实账单、fallback 或流式策略 |
+| 14 Observability（已完成） | JSON 白名单日志关联请求 ID、HTTP 状态/耗时、稳定错误码与 LangGraph 节点事件；避免输出输入、Prompt 和异常原文 | 离线日志测试通过；跨节点聚合指标、缓存命中率和真实模型用量尚未接入 |
+| 15 Evaluation（离线基线已完成） | 新增 3 条固定约束案例与确定性评测服务，复用约束构建路径并输出逐例结果 | 3/3 离线样例通过；真实提取、工具/计划成功率、Token/成本和缓存命中率仍缺供应商数据 |
+| 16 Frontend（已完成，端到端验收待补） | 延续 Home/Result；统一图片 API baseURL、取消/限流/去重；地图独立加载；增加结构化约束输入及真实状态；编辑调用服务端校验重算；地图输出处理不可信文本 | build 通过；浏览器验证错误/降级/恢复、编辑预算更新、非 localhost 部署；保留导出能力 |
+| 17 Docker + CI（本地构建/冒烟完成） | 基于 backend/requirements.txt、frontend/package-lock.json 明确可重复运行环境；容器包含所需 MCP 启动依赖 | 干净环境构建、离线回归和启动冒烟；凭据从环境注入 |
+| 18 README/Benchmark/Resume（已完成） | 修正当前 README 对路线和工具能力的过度描述；报告真实架构与测试限制 | 每条性能数字可追溯到 benchmark 数据及运行条件；无测量不填写 |
 
 ## 先处理的具体风险
 
@@ -39,6 +39,6 @@
 4. 输入无硬约束、输出无真实来源：先定义模型再建预算/路线/Validator，不能让模型输出金额充当预算引擎。
 5. Git 已初始化并有基线提交；每个后续阶段继续以真实 diff 和测试结果更新进度。
 
-## 下一阶段执行清单（Phase 13）
+## 后续工程缺口
 
-将现有 `llm_service.py` 变为唯一模型网关，集中 provider、结构化输出兼容、错误分类和请求级用量记录，并对限流、超时、响应不兼容及调用预算写离线测试。
+真实官方 RAG 语料、自由文本提取、完整时间窗/预约约束、持久 checkpoint、真实 LLM/高德端到端评测和 CI 远端运行仍需继续；这些不能用阶段编号或离线样例替代。
