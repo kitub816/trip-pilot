@@ -1,65 +1,45 @@
 import axios from 'axios'
-import type { TripFormData, TripPlanResponse } from '@/types'
+import type { TripFormData, TripPlan, TripPlanResponse } from '@/types'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 120000, // 2分钟超时
-  headers: {
-    'Content-Type': 'application/json'
-  }
+  timeout: 120000,
+  headers: { 'Content-Type': 'application/json' }
 })
 
-// 请求拦截器
-apiClient.interceptors.request.use(
-  (config) => {
-    console.log('发送请求:', config.method?.toUpperCase(), config.url)
-    return config
-  },
-  (error) => {
-    console.error('请求错误:', error)
-    return Promise.reject(error)
-  }
-)
-
-// 响应拦截器
-apiClient.interceptors.response.use(
-  (response) => {
-    console.log('收到响应:', response.status, response.config.url)
-    return response
-  },
-  (error) => {
-    console.error('响应错误:', error.response?.status, error.message)
-    return Promise.reject(error)
-  }
-)
-
-/**
- * 生成旅行计划
- */
-export async function generateTripPlan(formData: TripFormData): Promise<TripPlanResponse> {
+export async function generateTripPlan(formData: TripFormData, signal?: AbortSignal): Promise<TripPlanResponse> {
   try {
-    const response = await apiClient.post<TripPlanResponse>('/api/trip/plan', formData)
+    const response = await apiClient.post<TripPlanResponse>('/api/trip/plan', formData, { signal })
     return response.data
-  } catch (error: any) {
-    console.error('生成旅行计划失败:', error)
-    throw new Error(error.response?.data?.detail || error.message || '生成旅行计划失败')
+  } catch (error) {
+    if (axios.isCancel(error)) throw new Error('规划已取消')
+    if (axios.isAxiosError(error)) {
+      throw new Error(error.response?.data?.detail || error.response?.data?.message || '生成旅行计划失败')
+    }
+    throw new Error('生成旅行计划失败')
   }
 }
 
-/**
- * 健康检查
- */
-export async function healthCheck(): Promise<any> {
-  try {
-    const response = await apiClient.get('/health')
-    return response.data
-  } catch (error: any) {
-    console.error('健康检查失败:', error)
-    throw new Error(error.message || '健康检查失败')
-  }
+export async function getTripPlan(planId: string): Promise<{ data: TripPlan; version: number }> {
+  const response = await apiClient.get(`/api/trip/plans/${encodeURIComponent(planId)}`)
+  if (!response.data.data) throw new Error('计划数据不可用')
+  return { data: response.data.data, version: response.data.version }
+}
+
+export async function updateTripPlan(planId: string, expectedVersion: number, data: TripPlan): Promise<{ data: TripPlan; version: number }> {
+  const response = await apiClient.put(`/api/trip/plans/${encodeURIComponent(planId)}`, {
+    expected_version: expectedVersion,
+    data
+  })
+  if (!response.data.data) throw new Error('更新后的计划不可用')
+  return { data: response.data.data, version: response.data.version }
+}
+
+export async function getAttractionPhoto(name: string, signal?: AbortSignal): Promise<string | null> {
+  const response = await apiClient.get('/api/poi/photo', { params: { name }, signal })
+  return response.data?.success ? response.data?.data?.photo_url || null : null
 }
 
 export default apiClient
-

@@ -143,6 +143,19 @@
           </a-row>
         </div>
 
+        <div class="form-section">
+          <div class="section-header"><span class="section-icon">🎯</span><span class="section-title">硬约束</span></div>
+          <a-row :gutter="16">
+            <a-col :span="6"><a-form-item label="出行人数"><a-input-number v-model:value="formData.travelers" :min="1" :max="20" style="width:100%" /></a-form-item></a-col>
+            <a-col :span="6"><a-form-item label="总预算上限（元）"><a-input-number v-model:value="formData.budget_limit" :min="1" style="width:100%" /></a-form-item></a-col>
+            <a-col :span="6"><a-form-item label="每日步行上限（公里）"><a-input-number v-model:value="formData.max_daily_walking_km" :min="0.1" style="width:100%" /></a-form-item></a-col>
+            <a-col :span="6"><a-form-item label="单段交通上限（分钟）"><a-input-number v-model:value="formData.max_single_transport_minutes" :min="1" style="width:100%" /></a-form-item></a-col>
+          </a-row>
+          <a-row :gutter="16">
+            <a-col :span="12"><a-form-item label="必去地点（逗号分隔）"><a-input v-model:value="mustVisitText" /></a-form-item></a-col>
+            <a-col :span="12"><a-form-item label="避开地点（逗号分隔）"><a-input v-model:value="avoidPlacesText" /></a-form-item></a-col>
+          </a-row>
+        </div>
         <!-- 第三步:额外要求 -->
         <div class="form-section">
           <div class="section-header">
@@ -204,7 +217,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { generateTripPlan } from '@/services/api'
@@ -215,6 +228,10 @@ const router = useRouter()
 const loading = ref(false)
 const loadingProgress = ref(0)
 const loadingStatus = ref('')
+const mustVisitText = ref('')
+const avoidPlacesText = ref('')
+let requestController: AbortController | null = null
+onUnmounted(() => requestController?.abort())
 
 type TripFormState = Omit<TripFormData, 'start_date' | 'end_date'> & {
   start_date: Dayjs | null
@@ -229,7 +246,8 @@ const formData = reactive<TripFormState>({
   transportation: '公共交通',
   accommodation: '经济型酒店',
   preferences: [],
-  free_text_input: ''
+  free_text_input: '',
+  travelers: 1
 })
 
 // 监听日期变化,自动计算旅行天数
@@ -258,23 +276,8 @@ const handleSubmit = async () => {
   loadingProgress.value = 0
   loadingStatus.value = '正在初始化...'
 
-  // 模拟进度更新
-  const progressInterval = setInterval(() => {
-    if (loadingProgress.value < 90) {
-      loadingProgress.value += 10
-
-      // 更新状态文本
-      if (loadingProgress.value <= 30) {
-        loadingStatus.value = '🔍 正在搜索景点...'
-      } else if (loadingProgress.value <= 50) {
-        loadingStatus.value = '🌤️ 正在查询天气...'
-      } else if (loadingProgress.value <= 70) {
-        loadingStatus.value = '🏨 正在推荐酒店...'
-      } else {
-        loadingStatus.value = '📋 正在生成行程计划...'
-      }
-    }
-  }, 500)
+  requestController = new AbortController()
+  loadingStatus.value = '正在规划，等待服务端结果...'
 
   try {
     const requestData: TripFormData = {
@@ -285,18 +288,30 @@ const handleSubmit = async () => {
       transportation: formData.transportation,
       accommodation: formData.accommodation,
       preferences: formData.preferences,
-      free_text_input: formData.free_text_input
+      free_text_input: formData.free_text_input,
+      travelers: formData.travelers,
+      budget_limit: formData.budget_limit,
+      currency: formData.budget_limit ? 'CNY' : undefined,
+      must_visit: mustVisitText.value.split(/[,，]/).map(v => v.trim()).filter(Boolean),
+      avoid_places: avoidPlacesText.value.split(/[,，]/).map(v => v.trim()).filter(Boolean),
+      max_daily_walking_km: formData.max_daily_walking_km,
+      max_single_transport_minutes: formData.max_single_transport_minutes
     }
 
-    const response = await generateTripPlan(requestData)
+    const response = await generateTripPlan(requestData, requestController.signal)
 
-    clearInterval(progressInterval)
+
     loadingProgress.value = 100
     loadingStatus.value = '✅ 完成!'
 
     if (response.success && response.data) {
       // 保存到sessionStorage
       sessionStorage.setItem('tripPlan', JSON.stringify(response.data))
+      if (response.plan_id && response.version) {
+        sessionStorage.setItem('tripPlanRef', JSON.stringify({ planId: response.plan_id, version: response.version }))
+      } else {
+        sessionStorage.removeItem('tripPlanRef')
+      }
 
       message.success('旅行计划生成成功!')
 
@@ -308,13 +323,14 @@ const handleSubmit = async () => {
       message.error(response.message || '生成失败')
     }
   } catch (error: any) {
-    clearInterval(progressInterval)
+
     message.error(error.message || '生成旅行计划失败,请稍后重试')
   } finally {
     setTimeout(() => {
       loading.value = false
       loadingProgress.value = 0
       loadingStatus.value = ''
+      requestController = null
     }, 1000)
   }
 }
@@ -651,4 +667,3 @@ const handleSubmit = async () => {
   }
 }
 </style>
-

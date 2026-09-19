@@ -9,7 +9,7 @@
         <a-button v-if="!editMode" @click="toggleEditMode" type="default">
           ✏️ 编辑行程
         </a-button>
-        <a-button v-else @click="saveChanges" type="primary">
+        <a-button v-else @click="saveChanges" type="primary" :loading="saving">
           💾 保存修改
         </a-button>
         <a-button v-if="editMode" @click="cancelEdit" type="default">
@@ -105,6 +105,8 @@
                 <span class="total-label">预估总费用</span>
                 <span class="total-value">¥{{ tripPlan.budget.total }}</span>
               </div>
+              <a-alert v-if="tripPlan.budget.is_complete === false" message="部分价格未知，显示的是已知费用小计" type="warning" show-icon />
+              <a-alert v-if="tripPlan.budget.within_limit === false" message="已知费用超过预算上限" type="error" show-icon />
             </a-card>
           </div>
 
@@ -316,10 +318,13 @@ import AMapLoader from '@amap/amap-jsapi-loader'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 import type { TripPlan } from '@/types'
+import { getAttractionPhoto, getTripPlan, updateTripPlan } from '@/services/api'
 
 const router = useRouter()
 const tripPlan = ref<TripPlan | null>(null)
 const editMode = ref(false)
+const saving = ref(false)
+const planRef = ref<{ planId: string; version: number } | null>(null)
 const originalPlan = ref<TripPlan | null>(null)
 const attractionPhotos = ref<Record<string, string>>({})
 const activeSection = ref('overview')
@@ -328,13 +333,23 @@ let map: any = null
 
 onMounted(async () => {
   const data = sessionStorage.getItem('tripPlan')
-  if (data) {
-    tripPlan.value = JSON.parse(data)
-    // 加载景点图片
-    await loadAttractionPhotos()
-    // 等待DOM渲染完成后初始化地图
+  const reference = sessionStorage.getItem('tripPlanRef')
+  if (data) tripPlan.value = JSON.parse(data)
+  if (reference) {
+    try { planRef.value = JSON.parse(reference) } catch { sessionStorage.removeItem('tripPlanRef') }
+  }
+  if (planRef.value) {
+    try {
+      const stored = await getTripPlan(planRef.value.planId)
+      tripPlan.value = stored.data
+      planRef.value.version = stored.version
+      sessionStorage.setItem('tripPlan', JSON.stringify(stored.data))
+    } catch { message.warning('服务端计划暂不可读取，当前显示本地副本') }
+  }
+  if (tripPlan.value) {
     await nextTick()
     initMap()
+    void loadAttractionPhotos()
   }
 })
 
@@ -353,6 +368,7 @@ const scrollToSection = ({ key }: { key: string }) => {
 
 // 切换编辑模式
 const toggleEditMode = () => {
+  if (!planRef.value) { message.warning('当前计划未启用服务端保存，无法编辑'); return }
   editMode.value = true
   // 保存原始数据用于取消编辑
   originalPlan.value = JSON.parse(JSON.stringify(tripPlan.value))
@@ -360,21 +376,25 @@ const toggleEditMode = () => {
 }
 
 // 保存修改
-const saveChanges = () => {
-  editMode.value = false
-  // 更新sessionStorage
-  if (tripPlan.value) {
-    sessionStorage.setItem('tripPlan', JSON.stringify(tripPlan.value))
-  }
-  message.success('修改已保存')
-
-  // 重新初始化地图以反映更改
-  if (map) {
-    map.destroy()
-  }
-  nextTick(() => {
+const saveChanges = async () => {
+  if (!tripPlan.value || !planRef.value || saving.value) return
+  saving.value = true
+  try {
+    const stored = await updateTripPlan(planRef.value.planId, planRef.value.version, tripPlan.value)
+    tripPlan.value = stored.data
+    planRef.value.version = stored.version
+    sessionStorage.setItem('tripPlan', JSON.stringify(stored.data))
+    sessionStorage.setItem('tripPlanRef', JSON.stringify(planRef.value))
+    editMode.value = false
+    message.success('服务端已校验并保存修改，预算和路线已重算')
+    if (map) map.destroy()
+    await nextTick()
     initMap()
-  })
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '保存失败，请刷新后重试')
+  } finally {
+    saving.value = false
+  }
 }
 
 // 取消编辑
@@ -427,27 +447,13 @@ const getMealLabel = (type: string): string => {
 // 加载所有景点图片
 const loadAttractionPhotos = async () => {
   if (!tripPlan.value) return
-
-  const promises: Promise<void>[] = []
-
-  tripPlan.value.days.forEach(day => {
-    day.attractions.forEach(attraction => {
-      const promise = fetch(`http://localhost:8000/api/poi/photo?name=${encodeURIComponent(attraction.name)}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && data.data.photo_url) {
-            attractionPhotos.value[attraction.name] = data.data.photo_url
-          }
-        })
-        .catch(err => {
-          console.error(`获取${attraction.name}图片失败:`, err)
-        })
-
-      promises.push(promise)
-    })
-  })
-
-  await Promise.all(promises)
+  const names = [...new Set(tripPlan.value.days.flatMap(day => day.attractions.map(item => item.name)))].slice(0, 6)
+  await Promise.all(names.map(async name => {
+    try {
+      const photo = await getAttractionPhoto(name)
+      if (photo) attractionPhotos.value[name] = photo
+    } catch { /* Placeholder remains visible when the photo service is unavailable. */ }
+  }))
 }
 
 // 获取景点图片
@@ -477,7 +483,7 @@ const getAttractionImage = (name: string, index: number): string => {
       </linearGradient>
     </defs>
     <rect width="400" height="300" fill="url(#grad${index})"/>
-    <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="24" font-weight="bold" fill="white">${name}</text>
+    <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="24" font-weight="bold" fill="white">景点</text>
   </svg>`
 
   return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`
@@ -1388,4 +1394,3 @@ const drawRoutes = (AMap: any, attractions: any[]) => {
   }
 }
 </style>
-

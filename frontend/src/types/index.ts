@@ -43,6 +43,9 @@ export interface Budget {
   total_meals: number
   total_transportation: number
   total: number
+  is_complete?: boolean
+  within_limit?: boolean | null
+  unknown_items?: Array<{ category: string; day_index: number; item_name: string }>
 }
 
 export interface DayPlan {
@@ -98,4 +101,6 @@ export interface TripPlanResponse {
   success: boolean
   message: string
   data?: TripPlan
+  plan_id?: string | null
+  version?: number | null
 }
