@@ -1,0 +1,50 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      AMAP_API_KEY: ${AMAP_API_KEY:?Set AMAP_API_KEY}
+      LLM_API_KEY: ${LLM_API_KEY:?Set LLM_API_KEY}
+      LLM_MODEL_ID: ${LLM_MODEL_ID:?Set LLM_MODEL_ID}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: mysql+pymysql://trippilot:${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}@mysql:3306/trippilot
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_AMAP_WEB_JS_KEY: ${VITE_AMAP_WEB_JS_KEY:-}
+        VITE_AMAP_SECURITY_JS_CODE: ${VITE_AMAP_SECURITY_JS_CODE:-}
+    ports:
+      - "${TRIPPILOT_PORT:-8080}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: trippilot
+      MYSQL_USER: trippilot
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+volumes:
+  mysql_data:
