@@ -209,6 +209,9 @@
                         <p><strong>游览时长(分钟):</strong></p>
                         <a-input-number v-model:value="item.visit_duration" :min="10" :max="480" size="small" style="width: 100%; margin-bottom: 8px" />
 
+                        <p><strong>到访时间:</strong></p>
+                        <input v-model="item.visit_start" type="time" /> 至 <input v-model="item.visit_end" type="time" />
+
                         <p><strong>描述:</strong></p>
                         <a-textarea v-model:value="item.description" :rows="2" size="small" style="margin-bottom: 8px" />
                       </div>
@@ -217,6 +220,7 @@
                       <div v-else>
                         <p><strong>地址:</strong> {{ item.address }}</p>
                         <p><strong>游览时长:</strong> {{ item.visit_duration }}分钟</p>
+                        <p><strong>到访时间:</strong> {{ item.visit_start && item.visit_end ? item.visit_start + "–" + item.visit_end : "未安排" }}</p>
                         <p><strong>描述:</strong> {{ item.description }}</p>
                         <p v-if="item.rating"><strong>评分:</strong> {{ item.rating }}⭐</p>
                       </div>

@@ -1,6 +1,6 @@
 """Private LLM output schema; trusted domain models are built after validation."""
 
-from datetime import date
+from datetime import date, time
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -11,8 +11,18 @@ class PlannerAttractionSelection(BaseModel):
 
     candidate_id: str = Field(min_length=1, max_length=20)
     visit_duration: int = Field(ge=15, le=720)
+    visit_start: time | None = None
+    visit_end: time | None = None
     description: str = Field(min_length=1, max_length=1000)
     ticket_price: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def require_complete_visit_window(self) -> "PlannerAttractionSelection":
+        if (self.visit_start is None) != (self.visit_end is None):
+            raise ValueError("visit_start and visit_end must be provided together")
+        if self.visit_start is not None and (self.visit_start.tzinfo is not None or self.visit_end.tzinfo is not None):
+            raise ValueError("visit times must be local times without timezone offsets")
+        return self
 
 
 class PlannerHotelSelection(BaseModel):

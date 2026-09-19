@@ -52,7 +52,9 @@ class RouteOptimizer:
         points = attractions[:self.max_points]
         trailing = attractions[self.max_points:]
         matrix = await self._matrix(points, constraints.city, route_type)
-        order = self._order(points, matrix, constraints.max_single_transport_minutes)
+        # Explicit visit times fix the order; reordering would invalidate the schedule.
+        order = (list(range(len(points))) if any(item.visit_start is not None for item in points)
+                 else self._order(points, matrix, constraints.max_single_transport_minutes))
         ordered = [points[index] for index in order] + trailing
         legs, warnings = self._legs(points, order, matrix, constraints)
         if trailing:

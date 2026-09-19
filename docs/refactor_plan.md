@@ -1,6 +1,6 @@
 # TripPilot 渐进重构计划
 
-本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–18 的阶段代码与记录已落地；剩余规格缺口见 progress。实际范围、验证与限制见 [progress.md](progress.md)。
+本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–19 的阶段代码与记录已落地；剩余规格缺口见 progress。实际范围、验证与限制见 [progress.md](progress.md)。
 
 ## 迁移原则与落点
 
@@ -41,4 +41,8 @@
 
 ## 后续工程缺口
 
-真实官方 RAG 语料、自由文本提取、完整时间窗/预约约束、持久 checkpoint、真实 LLM/高德端到端评测和 CI 远端运行仍需继续；这些不能用阶段编号或离线样例替代。
+真实官方 RAG 语料、自由文本提取、景区营业时间/预约约束、持久 checkpoint、真实 LLM/高德端到端评测和 CI 远端运行仍需继续；这些不能用阶段编号或离线样例替代。
+
+## Phase 19 到访时间窗（已完成）
+
+计划景点支持可选时刻，服务端按时长和路线交通秒数校验内部时间冲突。没有时刻的旧计划不做完整时间断言；景区开放时间与预约事实仍待真实证据。详见 [phase19.md](phase19.md)。

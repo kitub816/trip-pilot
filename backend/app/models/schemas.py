@@ -1,6 +1,6 @@
 """数据模型定义"""
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from enum import Enum
 from typing import List, Literal, Optional, Union
@@ -115,6 +115,8 @@ class Attraction(BaseModel):
     address: str = Field(..., description="地址")
     location: Location = Field(..., description="经纬度坐标")
     visit_duration: int = Field(..., description="建议游览时间(分钟)")
+    visit_start: time | None = None
+    visit_end: time | None = None
     description: str = Field(..., description="景点描述")
     category: Optional[str] = Field(default="景点", description="景点类别")
     rating: Optional[float] = Field(default=None, description="评分")
@@ -122,6 +124,14 @@ class Attraction(BaseModel):
     poi_id: Optional[str] = Field(default="", description="POI ID")
     image_url: Optional[str] = Field(default=None, description="图片URL")
     ticket_price: Optional[int] = Field(default=None, ge=0, description="每人门票价格(元)，未知为null")
+
+    @model_validator(mode="after")
+    def require_complete_visit_window(self) -> "Attraction":
+        if (self.visit_start is None) != (self.visit_end is None):
+            raise ValueError("visit_start and visit_end must be provided together")
+        if self.visit_start is not None and (self.visit_start.tzinfo is not None or self.visit_end.tzinfo is not None):
+            raise ValueError("visit times must be local times without timezone offsets")
+        return self
 
 
 class Meal(BaseModel):

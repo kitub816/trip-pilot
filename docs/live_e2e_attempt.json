@@ -1,0 +1,32 @@
+{
+  "scope": "single live FastAPI TestClient request using configured Amap MCP and LLM",
+  "date_run": "2026-09-19",
+  "case": {
+    "city": "上海",
+    "start_date": "2026-10-19",
+    "end_date": "2026-10-19",
+    "transportation": "步行",
+    "accommodation": "经济型酒店",
+    "preferences": [
+      "外滩"
+    ],
+    "travelers": 1
+  },
+  "http_status": 503,
+  "elapsed_seconds": 17.053,
+  "success": false,
+  "error_code": "NO_CANDIDATES",
+  "observed_tools": {
+    "maps_text_search": "UPSTREAM_ERROR (3 logged)",
+    "maps_weather": "UPSTREAM_ERROR (1 logged)"
+  },
+  "direct_amap_probe": {
+    "result": "URLError",
+    "reason_type": "SSLEOFError",
+    "reason_errno": 8
+  },
+  "llm_reached": false,
+  "provider_token_usage": null,
+  "provider_cost": null,
+  "limitations": "No plan produced; no full-chain latency or success-rate claim."
+}

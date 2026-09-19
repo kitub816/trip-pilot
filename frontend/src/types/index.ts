@@ -10,6 +10,8 @@ export interface Attraction {
   address: string
   location: Location
   visit_duration: number
+  visit_start?: string | null
+  visit_end?: string | null
   description: string
   category?: string
   rating?: number

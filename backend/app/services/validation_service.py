@@ -1,6 +1,6 @@
 """Deterministic hard-constraint validation for a fully derived TripPlan."""
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from ..errors import PlanValidationError
@@ -22,6 +22,7 @@ class PlanValidator:
         self._validate_budget(plan, constraints, violations)
         self._validate_places(plan, constraints, violations)
         self._validate_routes(plan, violations)
+        self._validate_visit_windows(plan, violations)
         if evidence:
             self._validate_evidence(plan, evidence, violations)
         return PlanValidationResult(violations=violations)
@@ -122,6 +123,44 @@ class PlanValidator:
                     self._add(
                         violations, mapped[0], mapped[1], day_index=day_index,
                     )
+
+    def _validate_visit_windows(
+        self, plan: TripPlan, violations: list[PlanViolation],
+    ) -> None:
+        for day in plan.days:
+            attractions = day.attractions
+            if not any(item.visit_start is not None for item in attractions):
+                continue
+            if any(item.visit_start is None or item.visit_end is None for item in attractions):
+                self._add(violations, "VISIT_TIME_INCOMPLETE", "warning",
+                          day_index=day.day_index)
+            for item in attractions:
+                if item.visit_start is None or item.visit_end is None:
+                    continue
+                start = datetime.combine(date.min, item.visit_start)
+                end = datetime.combine(date.min, item.visit_end)
+                if end <= start:
+                    self._add(violations, "VISIT_TIME_INVALID", "error",
+                              day_index=day.day_index, subject=item.name)
+                elif end - start < timedelta(minutes=item.visit_duration):
+                    self._add(violations, "VISIT_DURATION_CONFLICT", "error",
+                              day_index=day.day_index, subject=item.name)
+            for index, (earlier, later) in enumerate(zip(attractions, attractions[1:])):
+                if earlier.visit_end is None or later.visit_start is None:
+                    continue
+                required = 0
+                if day.route is not None and index < len(day.route.legs):
+                    duration = day.route.legs[index].duration
+                    if duration is None:
+                        continue  # Route validation reports unavailable travel separately.
+                    required = duration
+                elif day.route is None:
+                    continue
+                gap = (datetime.combine(date.min, later.visit_start)
+                       - datetime.combine(date.min, earlier.visit_end)).total_seconds()
+                if gap < required:
+                    self._add(violations, "VISIT_TIME_CONFLICT", "error",
+                              day_index=day.day_index, subject=later.name)
 
     def _validate_evidence(
         self, plan: TripPlan, evidence: tuple[TravelEvidence, ...],

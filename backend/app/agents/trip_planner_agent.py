@@ -44,6 +44,8 @@ PLANNER_AGENT_PROMPT = """你是行程规划专家。根据服务端提供的候
         {
           "candidate_id": "A001",
           "visit_duration": 120,
+          "visit_start": "09:00",
+          "visit_end": "11:00",
           "description": "景点安排说明",
           "ticket_price": 60
         }
@@ -65,6 +67,7 @@ PLANNER_AGENT_PROMPT = """你是行程规划专家。根据服务端提供的候
 4. 没有酒店候选时hotel必须为null
 5. 单价无法确认时使用null，不要猜测
 6. 不要返回city、start_date、end_date、weather_info、route或budget，这些由服务端生成
+7. 为每个景点填写同一天的visit_start和visit_end（HH:MM）；两者之间至少容纳visit_duration，并为相邻景点预留交通时间。无法安排时两者都填null
 """
 
 PLANNER_REPAIR_PROMPT = """上一回复未通过严格校验。请依据最初提供的候选ID和日期重新输出。
@@ -317,6 +320,8 @@ class MultiAgentTripPlanner:
                     address=candidate.address,
                     location=candidate.location,
                     visit_duration=selection.visit_duration,
+                    visit_start=selection.visit_start,
+                    visit_end=selection.visit_end,
                     description=selection.description,
                     category=candidate.type,
                     poi_id=candidate.id,

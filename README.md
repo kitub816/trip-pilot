@@ -69,13 +69,13 @@ cd ..\frontend
 npm run build
 ```
 
-最近一次后端完整离线回归为 **154 passed、2 skipped**；前端生产构建通过。固定约束评测集为 **3/3**，数据和运行器分别在 `backend/evaluation/constraint_cases.json`、`backend/evaluation/benchmark.py`。一次本机测量的约束解析 P50/P95 见 [原始结果](docs/benchmark_results.json)；它不包含地图、LLM、路线或网络耗时，也不代表线上规划性能。未测量真实 provider token、成本、规划成功率或缓存命中率，因此不提供这些数字。
+最近一次后端完整离线回归为 **161 passed、2 skipped**；前端生产构建通过。固定约束评测集为 **3/3**，数据和运行器分别在 `backend/evaluation/constraint_cases.json`、`backend/evaluation/benchmark.py`。一次本机测量的约束解析 P50/P95 见 [原始结果](docs/benchmark_results.json)；它不包含地图、LLM、路线或网络耗时，也不代表线上规划性能。未测量真实 provider token、成本、规划成功率或缓存命中率，因此不提供这些数字。
 
 ## 已知限制
 
 - 自由文本当前没有独立的结构化约束提取器；硬约束以表单字段为准。
 - 默认 RAG 语料为空；没有官方资料时不声称景点开放、无需预约或无障碍。
-- DayPlan 没有具体到访时段，尚不能检查完整时间冲突；预约/无障碍也没有对应硬约束输入。
+- 景点可带计划到访开始/结束时间；确定性校验游览时长和相邻交通间隔。旧计划可无时刻，且尚无真实景区营业时段、预约/无障碍硬约束证据。
 - 规划调用仍是同步 HelloAgents；HTTP 客户端取消不保证取消后端计算。
 - LangGraph 没有持久 checkpoint；MySQL 不能恢复中断的节点执行。
 - 前端缺少浏览器端到端测试，构建仍提示大包；Docker 构建中 `npm ci` 报告的依赖告警需要逐项审计。GitHub Actions 工作流已提交，但尚未在远端验证。
