@@ -1,0 +1,75 @@
+{
+  "date_run": "2026-09-20",
+  "environment": "local Windows, FastAPI TestClient, configured live Amap and LLM",
+  "network_note": "Tool host required process-local NO_PROXY for restapi.amap.com and open.bigmodel.cn; no system proxy change.",
+  "initial_three_case_run": [
+    {
+      "city": "上海",
+      "transportation": "步行",
+      "http_status": 200,
+      "success": true,
+      "elapsed_seconds": 69.167,
+      "tool_calls_completed": 28,
+      "tool_calls_failed": 0,
+      "days": 1,
+      "attractions": 3,
+      "timed_attractions": 3,
+      "routes_complete": true
+    },
+    {
+      "city": "北京",
+      "transportation": "公共交通",
+      "http_status": 422,
+      "success": false,
+      "error_code": "PLAN_VALIDATION_ERROR",
+      "elapsed_seconds": 189.432,
+      "tool_calls_completed": 23,
+      "tool_calls_failed": 7
+    },
+    {
+      "city": "杭州",
+      "transportation": "自驾",
+      "http_status": 200,
+      "success": true,
+      "elapsed_seconds": 63.246,
+      "tool_calls_completed": 28,
+      "tool_calls_failed": 0,
+      "days": 1,
+      "attractions": 3,
+      "timed_attractions": 3,
+      "routes_complete": true
+    }
+  ],
+  "initial_suite_summary": {
+    "cases": 3,
+    "successful": 2,
+    "tool_calls_completed": 79,
+    "tool_calls_failed": 7
+  },
+  "after_direct_transit_fix": {
+    "city": "北京",
+    "transportation": "公共交通",
+    "http_status": 422,
+    "success": false,
+    "error_code": "PLAN_VALIDATION_ERROR",
+    "elapsed_seconds": 142.397,
+    "tool_calls_completed": 31,
+    "tool_calls_failed": 3
+  },
+  "independent_transit_probe": {
+    "success": true,
+    "duration_seconds": 3963,
+    "distance_meters": 7610.0
+  },
+  "single_case_success_before_suite": {
+    "city": "上海",
+    "http_status": 200,
+    "elapsed_seconds": 80.151,
+    "days": 1,
+    "attractions": 3,
+    "timed_attractions": 3
+  },
+  "provider_token_usage": null,
+  "provider_cost": null,
+  "interpretation": "Observed results only; no population success rate or latency percentile."
+}

@@ -41,3 +41,6 @@ Datawhale Hello-Agents 第 13 章旅行助手已经渐进重构为 TripPilot 工
 ## 环境注意
 
 本机 PowerShell 的普通命令执行偶尔报 `helper_unknown_error: setup refresh had errors`，这是工具执行环境初始化故障，不代表项目代码失败。此前获授权后使用提升执行权限的命令可继续；先尝试正常工具，失败时说明并按当前权限规则处理。不要把执行工具报错写成测试失败。
+## 2026-09-20 更新
+
+Phase 19 到访时间窗已落地；Phase 20 完成真实高德/LLM 固定案例初测和坐标路线、Planner null 字段修复。三例初测中上海步行与杭州自驾成功，北京公共交通失败；公交 MCP stdout 缺陷已绕开，但北京复测仍返回 422。后端回归 171 passed、2 skipped；结果和边界见 [phase20.md](phase20.md)、[live_e2e_results.json](live_e2e_results.json) 与 [progress.md](progress.md)。上文 2026-09-19 交接数字保留历史原样。

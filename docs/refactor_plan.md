@@ -1,6 +1,6 @@
 # TripPilot 渐进重构计划
 
-本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–19 的阶段代码与记录已落地；剩余规格缺口见 progress。实际范围、验证与限制见 [progress.md](progress.md)。
+本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–20 的阶段代码与记录已落地；剩余规格缺口见 progress。实际范围、验证与限制见 [progress.md](progress.md)。
 
 ## 迁移原则与落点
 
@@ -46,3 +46,7 @@
 ## Phase 19 到访时间窗（已完成）
 
 计划景点支持可选时刻，服务端按时长和路线交通秒数校验内部时间冲突。没有时刻的旧计划不做完整时间断言；景区开放时间与预约事实仍待真实证据。详见 [phase19.md](phase19.md)。
+
+## Phase 20 真实服务初测（局部通过）
+
+修复候选坐标路线、MCP 公交 stdout 缺陷和 Planner 酒店未知字段 null；真实三例初测 2/3 成功，北京公交仍返回 422。详见 [phase20.md](phase20.md)。下一步应先定位其剩余路段失败和校验项，再扩大真实案例；不能用小样本推断线上指标。

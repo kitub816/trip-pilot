@@ -1,15 +1,34 @@
-"""Typed Amap adapters backed by the bounded native MCP runtime."""
+"""Typed Amap adapters: bounded MCP tools, with direct transit API for broken stdio."""
 import asyncio
 import math
+import logging
 from datetime import date
 from threading import RLock
 
+import httpx
+
 from pydantic import JsonValue, ValidationError
 
-from ..errors import AppError, ToolArgumentError, ToolProtocolError, UpstreamError
+from ..errors import (AppError, ConfigurationError, ToolArgumentError, ToolProtocolError,
+                      ToolRateLimit, UpstreamError, UpstreamTimeout)
 from ..models.schemas import Location, POIInfo, RouteInfo, WeatherInfo
+from ..config import get_settings
 from .tool_runtime import ToolRuntime, get_tool_runtime, parse_payload
 from .cache_service import RetrievalCache, cached, get_retrieval_cache, skip_cache_write
+
+logger = logging.getLogger("trippilot.tools")
+
+
+class _RedactAmapRouteRequest(logging.Filter):
+    """Drop third-party request logs that could include the Amap query key."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return not ("direction/transit/integrated" in message and "key=" in message)
+
+
+for _http_logger_name in ("httpx", "httpcore"):
+    logging.getLogger(_http_logger_name).addFilter(_RedactAmapRouteRequest())
 
 
 def records(payload: JsonValue, key: str) -> list[dict[str, JsonValue]]:
@@ -44,9 +63,11 @@ def string(value: JsonValue) -> str:
 
 
 class AmapService:
-    def __init__(self, runtime: ToolRuntime | None = None, cache: RetrievalCache | None = None):
+    def __init__(self, runtime: ToolRuntime | None = None, cache: RetrievalCache | None = None,
+                 transit_transport: httpx.AsyncBaseTransport | None = None):
         self.runtime = runtime or get_tool_runtime()
         self.cache = cache or get_retrieval_cache()
+        self._transit_transport = transit_transport
 
     @cached("poi", list[POIInfo])
     async def asearch_poi(self, keywords: str, city: str, citylimit: bool = True) -> list[POIInfo]:
@@ -133,7 +154,79 @@ class AmapService:
         if destination_city is not None:
             arguments["destination_city"] = destination_city
         result = await self.runtime.call(tool_map[route_type], arguments)
-        data = parse_payload(result.payload)
+        return self._parse_route(result.payload, route_type)
+
+    @cached("route", RouteInfo)
+    async def aplan_route_by_coordinates(
+        self, origin: Location, destination: Location,
+        city: str | None = None, route_type: str = "walking",
+    ) -> RouteInfo:
+        tool_map = {
+            "walking": "maps_direction_walking_by_coordinates",
+            "driving": "maps_direction_driving_by_coordinates",
+            "transit": "maps_direction_transit_integrated_by_coordinates",
+        }
+        if route_type not in tool_map or (route_type == "transit" and not city):
+            raise ToolArgumentError()
+        for point in (origin, destination):
+            if (not math.isfinite(point.longitude) or not math.isfinite(point.latitude)
+                    or not -180 <= point.longitude <= 180 or not -90 <= point.latitude <= 90):
+                raise ToolArgumentError()
+        arguments = {
+            "origin": f"{origin.longitude},{origin.latitude}",
+            "destination": f"{destination.longitude},{destination.latitude}",
+        }
+        if route_type == "transit":
+            return await self._direct_transit_route(arguments, city)
+        result = await self.runtime.call(tool_map[route_type], arguments)
+        return self._parse_route(result.payload, route_type)
+
+    async def _direct_transit_route(self, coordinates: dict[str, str], city: str) -> RouteInfo:
+        # amap-mcp-server 0.1.11 prints the full transit response to stdout,
+        # corrupting its stdio protocol. Use the same provider API directly here.
+        settings = get_settings()
+        key = settings.amap_api_key.get_secret_value()
+        if not key.strip():
+            raise ConfigurationError()
+        params = {**coordinates, "city": city, "cityd": city, "key": key}
+        try:
+            async with httpx.AsyncClient(timeout=settings.tool_timeout,
+                                         transport=self._transit_transport) as client:
+                for attempt in range(2):
+                    try:
+                        response = await client.get(
+                            "https://restapi.amap.com/v3/direction/transit/integrated",
+                            params=params,
+                        )
+                    except httpx.TimeoutException as exc:
+                        if attempt == 0:
+                            await asyncio.sleep(0.2)
+                            continue
+                        raise UpstreamTimeout() from None
+                    except httpx.RequestError as exc:
+                        raise UpstreamError() from None
+                    if response.status_code == 429:
+                        if attempt == 0:
+                            await asyncio.sleep(0.2)
+                            continue
+                        raise ToolRateLimit()
+                    if response.status_code >= 400:
+                        raise UpstreamError()
+                    try:
+                        payload = response.json()
+                    except ValueError as exc:
+                        raise ToolProtocolError() from None
+                    result = self._parse_route(payload, "transit")
+                    logger.info("tool.completed.maps_direction_transit_direct")
+                    return result
+            raise UpstreamError()
+        except AppError as error:
+            logger.warning("tool.failed.maps_direction_transit_direct.%s", error.code)
+            raise
+
+    @staticmethod
+    def _parse_route(payload: JsonValue, route_type: str) -> RouteInfo:
+        data = parse_payload(payload)
         if not isinstance(data, dict) or not isinstance(data.get("route"), dict):
             raise ToolProtocolError()
         route = data["route"]

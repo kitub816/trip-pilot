@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-Phase 0–19 的阶段代码与记录已落地；关键规格缺口列于下方，不能视为线上验收完成。用户已授权逐阶段继续到最终阶段；每阶段独立验证、提交并归档文档。
+Phase 0–20 的阶段代码与记录已落地；关键规格缺口列于下方，不能视为线上验收完成。用户已授权逐阶段继续到最终阶段；每阶段独立验证、提交并归档文档。
 
 ## 当前架构
 
@@ -22,7 +22,7 @@ Phase 0–19 的阶段代码与记录已落地；关键规格缺口列于下方�
 - 可观测性：JSON 日志只输出白名单字段；请求关联 ID、HTTP 状态/耗时、稳定错误码和 LangGraph 节点事件可关联，不记录请求正文、Prompt 或异常原文。
 - 校验：Validator 检查日期、预算、must/avoid、重复和路线告警；error 触发有上限 Replan，warning 保留不确定性。PUT 重算路线/预算后在持久化前复验。
 - RAG：`TravelEvidence` 要求 URL、抓取时间、适用日期及 verified/uncertain 状态；默认没有语料即为未知。Planner 可读取证据，Validator 只根据适用的 verified 闭园日期拒绝计划，不将缺失资料推断为开放。
-- 地图：按本地缓存的 amap-mcp-server 0.1.11 源码解析搜索、详情、天气、地理编码和路线；生产固定该版本。搜索不含坐标，详情提供坐标；路线结果有距离和时间，无前端路网折线。
+- 地图：按本地缓存的 amap-mcp-server 0.1.11 源码解析搜索、详情、天气、地理编码和路线；生产固定该版本。搜索不含坐标，详情提供坐标；路线结果有距离和时间，无前端路网折线；Phase 20 公交坐标路线因 MCP stdout 缺陷改用有界高德 HTTP Service。
 - 安全：API 错误不含原文；MCP 子进程 stderr 不外传，MCP transport 日志只保留安全事件；健康检查不访问外部依赖。
 - 生命周期：会话及子进程由 async context 关闭；ASGI 停机清理 runtime、服务和 Planner/LLM 引用。
 
@@ -50,6 +50,7 @@ Phase 0–19 的阶段代码与记录已落地；关键规格缺口列于下方�
 | 17 | [Docker 与 CI](phase17.md)，提交 833007a |
 | 18 | [README、Benchmark 与求职材料](phase18.md)，提交见 Git 历史 |
 | 19 | [到访时间窗与确定性冲突校验](phase19.md)，本地实现和验证 |
+| 20 | [真实端到端初测与供应商适配修复](phase20.md)，2/3 固定案例初测成功，北京公交仍失败 |
 
 ## Phase 11 修改
 
@@ -95,12 +96,12 @@ JSON 日志补充请求耗时、状态码、稳定错误码和工作流节点名
 
 ## 实际验证
 
-`backend: python -m pytest tests -q`：**161 passed，2 skipped，10 warnings**。
+`backend: python -m pytest tests -q`：**171 passed，2 skipped，9 warnings**。
 
 真实 MySQL 8.4 一次性容器验证：`tests/test_phase7_persistence.py` **7 passed，10 warnings**；容器已删除。真实 Redis 阶段验证仍见 Phase 6 记录。
 `git diff --check`：通过。
 
-测试包括真实本地 MCP stdio 子进程正常关闭/超时退出（检查进程 returncode）、工具取消/配额/重试/截止时间、路线矩阵边界、Planner 候选与有限修复，以及 Validator 的约束违规、图中有界重规划与 PUT 写入前复验。没有访问真实高德、LLM 或 Unsplash，没有线上性能结论。
+测试包括真实本地 MCP stdio 子进程正常关闭/超时退出（检查进程 returncode）、工具取消/配额/重试/截止时间、路线矩阵边界、Planner 候选与有限修复，以及 Validator 的约束违规、图中有界重规划与 PUT 写入前复验。早期离线测试没有访问真实高德、LLM 或 Unsplash；Phase 20 另有固定真实案例初测，仍没有线上性能结论。
 
 环境：Python 3.10.1、mcp 1.29.1、anyio 4.14.2、hello-agents 0.2.9；LangGraph 本机仍为 1.0.0a3，后续需要在干净环境固定稳定版本。前端 Phase 16 生产构建通过；Phase 17 前后端镜像构建与 Compose 冒烟通过。
 
@@ -110,7 +111,7 @@ JSON 日志补充请求耗时、状态码、稳定错误码和工作流节点名
 - 截止时间触发后仍需执行 SDK 的进程清理，实际返回可多出清理时间。当前 HTTP 同步路由不会在客户端断开时自动取消；原生检索协程本身已支持取消。
 - Planner LLM 仍是同步 HelloAgents 调用，共享实例拒绝重叠规划；已有调用/Prompt 上限和 token 估算，但 SDK 没有可靠 provider usage，尚无真实成本、fallback 或流式策略。
 - ToolResult 提供工具名、抓取时间、尝试次数和耗时；候选级引用和跨节点指标尚未接入。
-- Redis 已作为可选检索缓存接入；MySQL 已提供可选计划记录，前端已接入服务端 GET/PUT。缺少真实官方证据语料、持久 checkpoint 和线上评测；不可宣称已完成真实供应商端到端验收。
+- Redis 已作为可选检索缓存接入；MySQL 已提供可选计划记录，前端已接入服务端 GET/PUT。缺少真实官方证据语料、持久 checkpoint 和大样本线上评测；Phase 20 只完成小样本真实初测。
 - MySQL 当前使用 `create_all`，没有 Alembic、鉴权、所有权或中断工作流恢复；`planning` 只用于识别未完成请求。
 - 预算单价尚无可靠证据；房间容量固定为 2，交通成本仍缺少可靠供应商报价；前端已展示未知费用状态。
 - 路线使用固定首点的最近邻启发式，不保证全局最优；混合交通暂映射公共交通，尚无逐段多模式比较、路线几何或固定中间点；已有计划到访时刻会保序。
@@ -122,7 +123,7 @@ JSON 日志补充请求耗时、状态码、稳定错误码和工作流节点名
 
 ## 下一阶段
 
-后续：补真实官方证据、自由文本提取、景区营业/预约约束、持久 checkpoint、真实服务评测和 CI 远端执行。
+后续：诊断北京公交案例剩余失败、扩大真实服务案例，补官方证据、自由文本提取、景区营业/预约约束、持久 checkpoint 和 CI 远端执行。
 
 ## Phase 16 修改
 
@@ -143,3 +144,7 @@ README 已按现有代码重写，新增约束层可复现 benchmark、原始结
 ## 真实供应商冒烟（未通过）
 
 2026-09-19 使用真实配置调用一条固定 FastAPI 规划请求，得到 HTTP 503/NO_CANDIDATES（17.053 秒）。高德工具搜索与天气均报 UPSTREAM_ERROR；独立高德探针返回 URLError/SSLEOFError，LLM 未调用。见 [尝试记录](live_e2e_attempt.md)。完整端到端评测仍未完成，不能报告规划成功率、全链路延迟、token 或成本。
+
+## Phase 20 修改与真实初测
+
+已用候选 POI 坐标替换路线阶段二次地址地理编码；步行/驾车继续走 MCP，公交因固定版本 MCP stdout 协议缺陷改走有界高德 HTTP Service。修复模型输出未知酒店价格范围 null 与草稿 schema 不一致的问题；新增安全解析分类和脱敏真实评测运行器。全量离线回归 171 passed、2 skipped。三例真实初测为 2 成功、1 失败；北京公交在直连公交 API 修复后复测仍为 422，不能认为已验收通过。见 [阶段记录](phase20.md) 与 [逐例数据](live_e2e_results.json)。

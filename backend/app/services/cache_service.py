@@ -120,7 +120,8 @@ def cached(kind: str, result_type):
         async def wrapper(self, *args, **kwargs):
             bound = signature.bind(self, *args, **kwargs)
             bound.apply_defaults()
-            arguments = {name: value for name, value in bound.arguments.items() if name != "self"}
+            arguments = {name: value.model_dump(mode="json") if isinstance(value, BaseModel) else value
+                         for name, value in bound.arguments.items() if name != "self"}
             return await self.cache.load(function.__name__, arguments, adapter,
                 lambda: function(self, *args, **kwargs), TTL[kind])
         return wrapper

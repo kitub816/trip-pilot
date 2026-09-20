@@ -1,6 +1,6 @@
 # TripPilot 智能旅行助手
 
-TripPilot 基于 Datawhale Hello-Agents 第 13 章旅行助手源码渐进重构。当前实现是一个可离线测试的工程化原型：FastAPI 接收结构化约束，LangGraph 编排检索、规划、路线、预算、验证和有上限重规划；高德 MCP 由确定性 Service 调用，HelloAgents SimpleAgent 只负责从候选中生成计划草稿。Vue 3 前端展示结果；Redis 与 MySQL 可选，Docker Compose 提供完整本地服务组合。
+TripPilot 基于 Datawhale Hello-Agents 第 13 章旅行助手源码渐进重构。当前实现是一个可离线测试的工程化原型：FastAPI 接收结构化约束，LangGraph 编排检索、规划、路线、预算、验证和有上限重规划；高德检索及步行/驾车路线由确定性 Service 调用 MCP；公交路线因固定版 MCP 的 stdio 缺陷由有界 HTTP Service 调用高德，HelloAgents SimpleAgent 只负责从候选中生成计划草稿。Vue 3 前端展示结果；Redis 与 MySQL 可选，Docker Compose 提供完整本地服务组合。
 
 ## 当前请求链路
 
@@ -13,7 +13,7 @@ Vue Home → POST /api/trip/plan → TripRequest / TravelConstraints
   → 可选 MySQL PlanStore → Vue Result
 ```
 
-路线、预算、日期和硬约束由 Python 代码计算。路线是有界有向矩阵上的固定首点最近邻排序；地图上的点位不等于真实道路折线。开放/闭园判断只使用来源 URL、抓取时间和适用期齐全且标记为 verified 的证据。仓库未内置官方景区语料，默认没有这类事实时返回“不确定”。
+路线、预算、日期和硬约束由 Python 代码计算。路线优先使用候选景点坐标，构建有界有向矩阵后按固定首点最近邻排序；地图上的点位不等于真实道路折线。开放/闭园判断只使用来源 URL、抓取时间和适用期齐全且标记为 verified 的证据。仓库未内置官方景区语料，默认没有这类事实时返回“不确定”。
 
 ## 本地运行
 
@@ -69,7 +69,7 @@ cd ..\frontend
 npm run build
 ```
 
-最近一次后端完整离线回归为 **161 passed、2 skipped**；前端生产构建通过。固定约束评测集为 **3/3**，数据和运行器分别在 `backend/evaluation/constraint_cases.json`、`backend/evaluation/benchmark.py`。一次本机测量的约束解析 P50/P95 见 [原始结果](docs/benchmark_results.json)；它不包含地图、LLM、路线或网络耗时，也不代表线上规划性能。未测量真实 provider token、成本、规划成功率或缓存命中率，因此不提供这些数字。
+最近一次后端完整离线回归为 **171 passed、2 skipped**；前端生产构建通过。固定约束评测集为 **3/3**，数据和运行器分别在 `backend/evaluation/constraint_cases.json`、`backend/evaluation/benchmark.py`。一次本机测量的约束解析 P50/P95 见 [原始结果](docs/benchmark_results.json)；它不包含地图、LLM、路线或网络耗时，也不代表线上规划性能。三条固定真实高德/LLM 案例初测中两条通过、一条失败，详见 [逐例结果](docs/live_e2e_results.json)；该小样本不是线上成功率。未取得可审计的 provider token、成本或缓存命中率，因此不提供这些数字。
 
 ## 已知限制
 

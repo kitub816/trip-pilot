@@ -111,6 +111,15 @@ def test_valid_draft_hydrates_trusted_candidate_and_request_facts():
     assert result.budget is None and result.days[0].route is None
 
 
+def test_unknown_hotel_text_fields_accept_null_without_inventing_facts():
+    value = draft()
+    for day_value in value["days"]:
+        day_value["hotel"].update(price_range=None, rating=None, distance=None)
+    result = parse(value)
+    assert all(item.hotel.price_range == "" and item.hotel.rating == ""
+               and item.hotel.distance == "" for item in result.days)
+
+
 @pytest.mark.parametrize("kind", ["attraction", "hotel"])
 def test_unknown_candidate_id_is_rejected(kind):
     value = draft()

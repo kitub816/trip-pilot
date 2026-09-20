@@ -47,6 +47,16 @@ class GeoArguments(Arguments):
     city: str | None = Field(default=None, min_length=1, max_length=100)
 
 
+class CoordinateRouteArguments(Arguments):
+    origin: str = Field(pattern=r"^-?\d+(?:\.\d+)?,-?\d+(?:\.\d+)?$")
+    destination: str = Field(pattern=r"^-?\d+(?:\.\d+)?,-?\d+(?:\.\d+)?$")
+
+
+class CoordinateTransitArguments(CoordinateRouteArguments):
+    city: str = Field(min_length=1, max_length=100)
+    cityd: str = Field(min_length=1, max_length=100)
+
+
 class RouteArguments(Arguments):
     origin_address: str = Field(min_length=1, max_length=300)
     destination_address: str = Field(min_length=1, max_length=300)
@@ -60,6 +70,9 @@ TOOL_SCHEMAS: dict[str, type[Arguments]] = {
     "maps_direction_walking_by_address": RouteArguments,
     "maps_direction_driving_by_address": RouteArguments,
     "maps_direction_transit_integrated_by_address": RouteArguments,
+    "maps_direction_walking_by_coordinates": CoordinateRouteArguments,
+    "maps_direction_driving_by_coordinates": CoordinateRouteArguments,
+    "maps_direction_transit_integrated_by_coordinates": CoordinateTransitArguments,
 }
 
 
@@ -89,8 +102,14 @@ async def amap_session():
     key = settings.amap_api_key.get_secret_value()
     if not key.strip():
         raise ConfigurationError()
+    child_env = {"AMAP_MAPS_API_KEY": key}
+    # Explicit MCP env replaces the default inherited environment. Preserve a
+    # caller-selected direct route for Amap without exposing proxy credentials.
+    for name in ("NO_PROXY", "no_proxy"):
+        if os.environ.get(name):
+            child_env[name] = os.environ[name]
     params = StdioServerParameters(command="uvx", args=["amap-mcp-server==0.1.11"],
-                                  env={"AMAP_MAPS_API_KEY": key})
+                                  env=child_env)
     # Child stderr can contain credentials and queries; never forward it to API logs.
     with open(os.devnull, "w") as errlog:
         async with stdio_client(params, errlog=errlog) as (reader, writer):

@@ -5,7 +5,7 @@ from typing import Protocol
 
 from ..config import get_settings
 from ..errors import AppError
-from ..models.schemas import Attraction, DayRoute, RouteInfo, RouteLeg, TripPlan
+from ..models.schemas import Attraction, DayRoute, Location, RouteInfo, RouteLeg, TripPlan
 from .amap_service import get_amap_service
 from .constraint_service import TransportationMode, TravelConstraints
 
@@ -85,15 +85,20 @@ class RouteOptimizer:
         async def fetch(origin: int, destination: int) -> None:
             async with quota:
                 try:
-                    route = await asyncio.wait_for(
-                        self.provider.aplan_route(
+                    coordinate_route = getattr(self.provider, "aplan_route_by_coordinates", None)
+                    if coordinate_route is not None:
+                        pending = coordinate_route(
+                            points[origin].location, points[destination].location,
+                            city if route_type == "transit" else None, route_type,
+                        )
+                    else:
+                        pending = self.provider.aplan_route(
                             self._address(points[origin]), self._address(points[destination]),
                             city if route_type == "transit" else None,
                             city if route_type == "transit" else None,
                             route_type,
-                        ),
-                        timeout=self.leg_timeout,
-                    )
+                        )
+                    route = await asyncio.wait_for(pending, timeout=self.leg_timeout)
                 except asyncio.CancelledError:
                     raise
                 except (AppError, asyncio.TimeoutError, TimeoutError):

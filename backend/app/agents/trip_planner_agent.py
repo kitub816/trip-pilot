@@ -3,6 +3,8 @@
 import json
 import logging
 from datetime import timedelta
+
+from pydantic import ValidationError
 from threading import Lock
 
 from hello_agents import SimpleAgent
@@ -35,9 +37,9 @@ PLANNER_AGENT_PROMPT = """你是行程规划专家。根据服务端提供的候
       "accommodation": "住宿类型",
       "hotel": {
         "candidate_id": "H001",
-        "price_range": "300-500元",
-        "rating": "4.5",
-        "distance": "距离景点2公里",
+        "price_range": null,
+        "rating": null,
+        "distance": null,
         "estimated_cost": 400
       },
       "attractions": [
@@ -65,7 +67,7 @@ PLANNER_AGENT_PROMPT = """你是行程规划专家。根据服务端提供的候
 2. 每个日期和day_index必须与请求中的日期序列完全一致
 3. 每天安排1-3个景点，且必须包含一次breakfast、lunch、dinner
 4. 没有酒店候选时hotel必须为null
-5. 单价无法确认时使用null，不要猜测
+5. 单价及酒店价格范围、评分、距离无法确认时使用null，不要猜测
 6. 不要返回city、start_date、end_date、weather_info、route或budget，这些由服务端生成
 7. 为每个景点填写同一天的visit_start和visit_end（HH:MM）；两者之间至少容纳visit_duration，并为相邻景点预留交通时间。无法安排时两者都填null
 """
@@ -290,6 +292,23 @@ class MultiAgentTripPlanner:
                 draft, request, attractions or {}, hotels or {}, weather,
             )
         except (ValueError, TypeError, AttributeError) as exc:
+            if isinstance(exc, ValidationError):
+                issue = exc.errors()[0] if exc.errors() else {}
+                path = "_".join(str(part) for part in issue.get("loc", ()))
+                category = f"schema_{path}_{issue.get('type', 'unknown')}"
+            elif isinstance(exc, json.JSONDecodeError):
+                category = "json_syntax"
+            else:
+                known = {
+                    "invalid response size": "response_size",
+                    "response must contain only one JSON object": "json_envelope",
+                    "plan day count does not match request": "day_count",
+                    "plan date sequence does not match request": "date_sequence",
+                    "unknown attraction candidate": "unknown_attraction_id",
+                    "unknown hotel candidate": "unknown_hotel_id",
+                }
+                category = known.get(str(exc), type(exc).__name__.lower())
+            logger.warning("planning.parse_failed.%s", category)
             raise PlanParseError() from exc
 
     @staticmethod
@@ -336,9 +355,9 @@ class MultiAgentTripPlanner:
                     name=candidate.name,
                     address=candidate.address,
                     location=candidate.location,
-                    price_range=day.hotel.price_range,
-                    rating=day.hotel.rating,
-                    distance=day.hotel.distance,
+                    price_range=day.hotel.price_range or "",
+                    rating=day.hotel.rating or "",
+                    distance=day.hotel.distance or "",
                     type=candidate.type,
                     estimated_cost=day.hotel.estimated_cost,
                 )

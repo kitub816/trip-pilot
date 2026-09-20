@@ -29,9 +29,9 @@ class PlannerHotelSelection(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     candidate_id: str = Field(min_length=1, max_length=20)
-    price_range: str = Field(default="", max_length=100)
-    rating: str = Field(default="", max_length=30)
-    distance: str = Field(default="", max_length=100)
+    price_range: str | None = Field(default=None, max_length=100)
+    rating: str | None = Field(default=None, max_length=30)
+    distance: str | None = Field(default=None, max_length=100)
     estimated_cost: int | None = Field(default=None, ge=0)
 
 

@@ -7,7 +7,7 @@
 - 基于 HelloAgents 旅行助手源码完成渐进式重构：FastAPI 接收 Pydantic 约束，LangGraph 编排并发检索、候选 ID 规划、确定性路线/预算/校验和有上限重规划；将天气、POI、酒店、路线从“Agent 角色”收敛为 Service。
 - 建立 MCP Tool Runtime：参数与工具 schema 校验、单次/总超时、有界重试和并发配额；Redis 类型化缓存只保存验证后的检索事实，MySQL 以版本号保护计划编辑。
 - 将 LLM 输出限制为私有 PlannerDraft 和候选 ID，由服务端水合 POI；预算、路线和硬约束由代码验证。带来源与适用期的 RAG 证据只在 verified 时用于闭园判断，缺证据保持未知。
-- 建立离线回归、固定约束评测和 Docker Compose 冒烟。最近一次后端回归 154 passed、2 skipped；本机容器构建与首页/API 200 冒烟通过。该测试不等于真实模型或地图服务成功率。
+- 建立离线回归、固定约束评测和 Docker Compose 冒烟。最近一次后端回归 171 passed、2 skipped；本机容器构建与首页/API 200 冒烟通过。另有三条固定真实服务案例初测，其中两条成功、一条失败；该小样本不等于线上成功率。
 
 ## 面试时必须说明的边界
 
