@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-Phase 0–25 的阶段代码与记录已落地；关键规格缺口列于下方，不能视为线上验收完成。用户已明确授权连续优化；各阶段独立测试、提交与归档。
+Phase 0–26 的阶段代码与记录已落地；关键规格缺口列于下方，不能视为线上验收完成。用户已明确授权连续优化；各阶段独立测试、提交与归档。
 
 ## 当前架构
 
@@ -97,7 +97,7 @@ JSON 日志补充请求耗时、状态码、稳定错误码和工作流节点名
 
 ## 实际验证
 
-`backend: python -m pytest tests -q`：**202 passed，2 skipped，9 warnings**。
+`backend: python -m pytest tests -q`：**205 passed，2 skipped，8 warnings**（项目 .venv 稳定 LangGraph）。
 
 真实 MySQL 8.4 一次性容器验证：`tests/test_phase7_persistence.py` **7 passed，10 warnings**；容器已删除。真实 Redis 阶段验证仍见 Phase 6 记录。
 `git diff --check`：通过。
@@ -169,3 +169,7 @@ README 已按现有代码重写，新增约束层可复现 benchmark、原始结
 ## Phase 25 修改
 
 故宫官方证据已内置，营业与免预约约束由 Python 校验；来源和不确定提示保存并展示，编辑重载可信证据。后端 202 passed、2 skipped；浏览器 8 passed；build 通过。仅主 POI 和限定日期，见 [phase25.md](phase25.md)。
+
+## Phase 26 修改
+
+可选 SQLite checkpoint 与本地恢复 CLI 已实现，跨进程读取/不重复已完成规划节点验证通过。网页不自动恢复，模型配额不跨进程累计。205 passed、2 skipped，详见 [phase26.md](phase26.md)。远端 CI 未配置 remote，等待仓库与推送授权。

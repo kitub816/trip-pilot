@@ -62,3 +62,7 @@
 ## Phase 25 更新
 
 故宫官方证据、营业时段与免预约约束、引用和 warning 持久化展示已完成。202 passed、2 skipped；8 项浏览器回归，build 通过。具体边界见 [phase25.md](phase25.md)，下一项持久 checkpoint。
+
+## Phase 26 更新
+
+本地 SQLite checkpoint/恢复 CLI 已验证，稳定依赖在 backend/.venv，205 passed、2 skipped。HTTP 自动恢复仍未实现。详见 [phase26.md](phase26.md)。

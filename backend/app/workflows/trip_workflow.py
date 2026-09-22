@@ -1,9 +1,11 @@
 """Request-scoped LangGraph adapter for the legacy trip planner."""
 
 import logging
+import re
 from typing import Callable, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from ..agents.trip_planner_agent import MultiAgentTripPlanner, get_trip_planner_agent
 from ..errors import AppError, PlanValidationError, upstream_failure
@@ -44,7 +46,8 @@ class TripPlanningWorkflow:
                  budget_engine: BudgetEngine | None = None,
                  route_optimizer: RouteOptimizer | None = None,
                  validator: PlanValidator | None = None,
-                 max_replan_attempts: int | None = None) -> None:
+                 max_replan_attempts: int | None = None,
+                 checkpointer: BaseCheckpointSaver | None = None) -> None:
         self._planner_factory = planner_factory
         self._budget_engine = budget_engine or get_budget_engine()
         self._route_optimizer = route_optimizer or get_route_optimizer()
@@ -78,13 +81,34 @@ class TripPlanningWorkflow:
         )
         graph.add_edge("replan", "route")
         graph.add_edge("failure", END)
-        self._graph = graph.compile()
+        self._graph = graph.compile(checkpointer=checkpointer)
 
-    def plan(self, constraints: TravelConstraints) -> TripPlan:
+    @staticmethod
+    def _thread_config(thread_id: str) -> dict:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", thread_id):
+            raise ValueError("invalid thread id")
+        return {"configurable": {"thread_id": thread_id}}
+
+    def resume(self, thread_id: str) -> TripPlan:
+        config = self._thread_config(thread_id)
+        snapshot = self._graph.get_state(config)
+        if not snapshot.values:
+            raise ValueError("checkpoint not found")
+        state = self._graph.invoke(None, config) if snapshot.next else snapshot.values
+        return self._result(state)
+
+    def plan(self, constraints: TravelConstraints, thread_id: str | None = None) -> TripPlan:
+        config = self._thread_config(thread_id) if thread_id is not None else None
+        if config is not None and self._graph.get_state(config).values:
+            raise ValueError("thread already exists; resume it or use a new id")
         state = self._graph.invoke({
             "constraints": constraints, "status": "planning", "plan": None, "error": None,
             "retrieval": None, "violations": (), "replan_attempts": 0, "evidence": (),
-        })
+        }, config)
+        return self._result(state)
+
+    @staticmethod
+    def _result(state: TripWorkflowState) -> TripPlan:
         error = state["error"]
         if error is not None:
             raise error

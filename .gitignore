@@ -38,3 +38,7 @@ pnpm-debug.log*
 # Browser test artifacts
 playwright-report/
 test-results/
+
+# Local workflow checkpoints contain user requests
+*.sqlite
+*.sqlite-*
