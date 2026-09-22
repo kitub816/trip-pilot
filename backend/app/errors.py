@@ -100,3 +100,9 @@ def upstream_failure(exc: BaseException) -> UpstreamError | UpstreamTimeout:
             return UpstreamTimeout()
         current = current.__cause__ or current.__context__
     return UpstreamError()
+
+
+class ConstraintExtractionError(AppError):
+    status_code = 422
+    code = "CONSTRAINT_EXTRACTION_ERROR"
+    message = "未能提取可靠约束，请修改描述或手动填写结构化字段"

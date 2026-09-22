@@ -146,8 +146,8 @@
         <div class="form-section">
           <div class="section-header"><span class="section-icon">🎯</span><span class="section-title">硬约束</span></div>
           <a-row :gutter="16">
-            <a-col :span="6"><a-form-item label="出行人数"><a-input-number v-model:value="formData.travelers" :min="1" :max="20" style="width:100%" /></a-form-item></a-col>
-            <a-col :span="6"><a-form-item label="总预算上限（元）"><a-input-number v-model:value="formData.budget_limit" :min="1" style="width:100%" /></a-form-item></a-col>
+            <a-col :span="6"><a-form-item label="出行人数"><a-input-number v-model:value="formData.travelers" placeholder="默认1人" :min="1" :max="20" style="width:100%" /></a-form-item></a-col>
+            <a-col :span="6"><a-form-item label="总预算上限（元）"><a-input-number v-model:value="formData.budget_limit" aria-label="总预算上限（元）" :min="1" style="width:100%" /></a-form-item></a-col>
             <a-col :span="6"><a-form-item label="每日步行上限（公里）"><a-input-number v-model:value="formData.max_daily_walking_km" :min="0.1" style="width:100%" /></a-form-item></a-col>
             <a-col :span="6"><a-form-item label="单段交通上限（分钟）"><a-input-number v-model:value="formData.max_single_transport_minutes" :min="1" style="width:100%" /></a-form-item></a-col>
           </a-row>
@@ -173,6 +173,14 @@
             />
           </a-form-item>
         </div>
+
+        <a-button :loading="extracting" :disabled="loading || !formData.free_text_input?.trim()" @click="previewConstraints">提取约束预览</a-button>
+        <a-card v-if="extractionPreview" title="请核对提取结果" size="small">
+          <p v-for="item in previewRows" :key="item.label">{{ item.label }}：{{ item.value }}</p>
+          <p>仅填入尚未填写的字段；已有字段保持不变。未提取的信息不会作为硬约束。</p>
+          <a-button @click="applyExtraction">确认填入空白约束</a-button>
+          <a-button @click="extractionPreview = null">取消提取</a-button>
+        </a-card>
 
         <!-- 提交按钮 -->
         <a-form-item>
@@ -217,11 +225,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onUnmounted } from 'vue'
+import { ref, reactive, watch, computed, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { generateTripPlan } from '@/services/api'
-import type { TripFormData } from '@/types'
+import { generateTripPlan, extractConstraints } from '@/services/api'
+import type { TripFormData, ExtractionPreview } from '@/types'
 import type { Dayjs } from 'dayjs'
 
 const router = useRouter()
@@ -247,8 +255,39 @@ const formData = reactive<TripFormState>({
   accommodation: '经济型酒店',
   preferences: [],
   free_text_input: '',
-  travelers: 1
+  travelers: undefined
 })
+
+
+const extracting = ref(false)
+const extractionPreview = ref<ExtractionPreview | null>(null)
+const previewRows = computed(() => {
+  const labels: Record<string, string> = { travelers: '人数', budget_limit: '总预算（元）',
+    currency: '币种', must_visit: '必去地点', avoid_places: '避开地点',
+    max_daily_walking_km: '每日步行上限（公里）', max_single_transport_minutes: '单段交通上限（分钟）' }
+  return Object.entries(extractionPreview.value || {}).filter(([, value]) => value != null)
+    .map(([key, value]) => ({ label: labels[key], value: Array.isArray(value) ? value.join('、') : value }))
+})
+const previewConstraints = async () => {
+  if (extracting.value) return
+  extracting.value = true
+  extractionPreview.value = null
+  try { extractionPreview.value = await extractConstraints(formData.free_text_input) }
+  catch (error) { message.error(error instanceof Error ? error.message : '提取失败') }
+  finally { extracting.value = false }
+}
+const applyExtraction = () => {
+  const value = extractionPreview.value
+  if (!value) return
+  if (formData.travelers == null && value.travelers != null) formData.travelers = value.travelers
+  if (formData.budget_limit == null && value.budget_limit != null) formData.budget_limit = Number(value.budget_limit)
+  if (formData.max_daily_walking_km == null && value.max_daily_walking_km != null) formData.max_daily_walking_km = value.max_daily_walking_km
+  if (formData.max_single_transport_minutes == null && value.max_single_transport_minutes != null) formData.max_single_transport_minutes = value.max_single_transport_minutes
+  if (!mustVisitText.value.trim() && value.must_visit) mustVisitText.value = value.must_visit.join('，')
+  if (!avoidPlacesText.value.trim() && value.avoid_places) avoidPlacesText.value = value.avoid_places.join('，')
+  extractionPreview.value = null
+  message.success('约束已填入，请核对后开始规划')
+}
 
 // 监听日期变化,自动计算旅行天数
 watch([() => formData.start_date, () => formData.end_date], ([start, end]) => {

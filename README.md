@@ -69,7 +69,7 @@ cd ..\frontend
 npm run build
 ```
 
-最近一次后端完整离线回归为 **178 passed、2 skipped**；前端生产构建通过。固定约束评测集为 **3/3**，数据和运行器分别在 `backend/evaluation/constraint_cases.json`、`backend/evaluation/benchmark.py`。一次本机测量的约束解析 P50/P95 见 [原始结果](docs/benchmark_results.json)；它不包含地图、LLM、路线或网络耗时，也不代表线上规划性能。三条固定真实高德/LLM 案例初测中两条通过、一条失败，详见 [逐例结果](docs/live_e2e_results.json)；该小样本不是线上成功率。未取得可审计的 provider token、成本或缓存命中率，因此不提供这些数字。
+最近一次后端完整离线回归为 **192 passed、2 skipped**；前端生产构建通过。固定约束评测集为 **3/3**，数据和运行器分别在 `backend/evaluation/constraint_cases.json`、`backend/evaluation/benchmark.py`。一次本机测量的约束解析 P50/P95 见 [原始结果](docs/benchmark_results.json)；它不包含地图、LLM、路线或网络耗时，也不代表线上规划性能。三条固定真实高德/LLM 案例初测中两条通过、一条失败，详见 [逐例结果](docs/live_e2e_results.json)；该小样本不是线上成功率。未取得可审计的 provider token、成本或缓存命中率，因此不提供这些数字。
 
 ## 已知限制
 
@@ -83,3 +83,5 @@ npm run build
 阶段过程和实测证据见 [项目进度](docs/progress.md)、[重构计划](docs/refactor_plan.md) 与 [Phase 0 架构分析](docs/current_architecture.md)。
 
 Phase 21 已修复北京公交限流重试和交通时长反馈，原失败案例单独复测通过；属于单例结果，不改变历史三例初测记录，也不代表线上成功率。详见 [阶段记录](docs/phase21.md)。
+
+2026-09-22 更新：已增加自由文本约束提取预览（用户确认后填入空白字段）、7 项浏览器 API 契约回归、PDF 下载验证；依赖审计当前为 0 项。浏览器测试使用固定 API 响应，远端 CI 未验证。

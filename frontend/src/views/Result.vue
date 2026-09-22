@@ -17,7 +17,7 @@
         </a-button>
 
         <!-- 导出按钮 -->
-        <a-dropdown v-if="!editMode">
+        <a-dropdown v-if="!editMode" :trigger="['click']">
           <template #overlay>
             <a-menu>
               <a-menu-item key="image" @click="exportAsImage">

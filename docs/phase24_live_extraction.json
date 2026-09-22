@@ -1,0 +1,18 @@
+{
+  "scope": "one live extraction only; not a full trip plan",
+  "result": {
+    "travelers": 2,
+    "budget_limit": "3000",
+    "currency": "CNY",
+    "must_visit": [
+      "故宫"
+    ],
+    "avoid_places": [
+      "长城"
+    ],
+    "max_daily_walking_km": 5.0,
+    "max_single_transport_minutes": 45
+  },
+  "provider_token_usage": null,
+  "provider_cost": null
+}

@@ -25,6 +25,8 @@ async function fillRequest(page: Page) {
   const dates = page.getByPlaceholder('选择日期')
   await dates.nth(0).click()
   await page.locator('.ant-picker-dropdown:visible [title="2026-10-20"]').click()
+  await expect(dates.nth(0)).toHaveValue('2026-10-20')
+  await expect(page.locator('.ant-picker-dropdown:visible')).toHaveCount(0)
   await dates.nth(1).click()
   await page.locator('.ant-picker-dropdown:visible [title="2026-10-20"]').click()
 }
@@ -97,7 +99,7 @@ test('save conflict explains recovery and preserves unsaved edits', async ({ pag
 
 test('PDF export downloads a real PDF after dependency upgrade', async ({ page }) => {
   await openStored(page)
-  await page.getByRole('button', { name: '导出行程' }).hover()
+  await page.getByRole('button', { name: '导出行程' }).click()
   const downloadPromise = page.waitForEvent('download')
   await page.getByText('导出为PDF', { exact: false }).click()
   const download = await downloadPromise
@@ -109,4 +111,31 @@ test('PDF export downloads a real PDF after dependency upgrade', async ({ page }
   const bytes = Buffer.concat(chunks)
   expect(bytes.subarray(0, 5).toString()).toBe('%PDF-')
   expect(bytes.length).toBeGreaterThan(1000)
+})
+
+
+test('extraction requires confirmation and keeps explicit fields', async ({ page }) => {
+  await page.route('**/api/trip/extract', route => route.fulfill({
+    json: { travelers: 2, budget_limit: '2000', currency: 'CNY', must_visit: ['故宫'] }
+  }))
+  await page.goto('/')
+  await page.getByRole('spinbutton', { name: '总预算上限（元）' }).fill('1500')
+  await page.getByPlaceholder('请输入您的额外要求', { exact: false }).fill('两人，总预算2000元，必须去故宫')
+  await page.getByRole('button', { name: '提取约束预览' }).click()
+  await expect(page.getByText('请核对提取结果')).toBeVisible()
+  await expect(page.getByPlaceholder('默认1人')).toHaveValue('')
+  await page.getByRole('button', { name: '确认填入空白约束' }).click()
+  await expect(page.getByPlaceholder('默认1人')).toHaveValue('2')
+  await expect(page.getByRole('spinbutton', { name: '总预算上限（元）' })).toHaveValue('1500')
+})
+
+test('extraction failure leaves manual planning available', async ({ page }) => {
+  await page.route('**/api/trip/extract', route => route.fulfill({
+    status: 422, json: { message: '未能提取可靠约束，请手动填写' }
+  }))
+  await page.goto('/')
+  await page.getByPlaceholder('请输入您的额外要求', { exact: false }).fill('测试')
+  await page.getByRole('button', { name: '提取约束预览' }).click()
+  await expect(page.getByText('未能提取可靠约束，请手动填写')).toBeVisible()
+  await expect(page.getByRole('button', { name: '开始规划我的旅行' })).toBeEnabled()
 })

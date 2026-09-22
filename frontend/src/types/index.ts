@@ -106,3 +106,13 @@ export interface TripPlanResponse {
   plan_id?: string | null
   version?: number | null
 }
+
+export interface ExtractionPreview {
+  travelers?: number | null
+  budget_limit?: string | number | null
+  currency?: "CNY" | null
+  must_visit?: string[] | null
+  avoid_places?: string[] | null
+  max_daily_walking_km?: number | null
+  max_single_transport_minutes?: number | null
+}

@@ -4,13 +4,13 @@
 
 ## 当前阶段
 
-Phase 0–23 的阶段代码与记录已落地；关键规格缺口列于下方，不能视为线上验收完成。用户已明确授权连续优化；各阶段独立测试、提交与归档。
+Phase 0–24 的阶段代码与记录已落地；关键规格缺口列于下方，不能视为线上验收完成。用户已明确授权连续优化；各阶段独立测试、提交与归档。
 
 ## 当前架构
 
 `FastAPI 同步工作线程 → TravelConstraints → LangGraph(structured plan → deterministic route → deterministic budget → deterministic validation → bounded replan) → TripRetrievalService → AmapService → 类型化 RetrievalCache（可选 Redis）→ ToolRuntime → 原生 MCP stdio 会话`。候选 POI 还会按稳定 ID 经本地来源证据检索进入 Planner 与 Validator；检索结果先生成请求内候选 catalog，Planner LLM 只返回候选 ID 草稿；服务端水合 TripPlan 后，路线、预算与 Validator 依次计算。只有类型化 error violations 才可触发一次有上限 Replan；配置数据库后，PlanStore 持久化最终计划。
 
-- 约束：日期、人数、CNY 预算上限、必去/避开、步行及单段交通上限已结构化；自由文本提取只有合并边界，尚无提取器。
+- 约束：日期、人数、CNY 预算上限、必去/避开、步行及单段交通上限已结构化；自由文本已支持独立提取预览，用户确认后填入结构化字段。
 - 工具：本地 Pydantic 参数白名单 + 发现的工具 schema；每次尝试独立会话；默认 20 秒单次/50 秒总截止时间、最多 2 次尝试、每进程 3 个并发槽。只重试明确超时或结构化限流。
 - 检索：最多 3 个并发任务，单任务含排队 60 秒截止时间，覆盖偏好和必去，POI 按 ID 去重，每个搜索最多补查 6 个详情。无有效景点明确终止。
 - 缓存：只保存已验证的 POI、天气、geocode、路线类型结果；键含协议版本、操作和规范化参数哈希。POI/geocode 24 小时、路线 30 分钟、天气 10 分钟；Redis 不可用或值损坏时回源。
@@ -97,7 +97,7 @@ JSON 日志补充请求耗时、状态码、稳定错误码和工作流节点名
 
 ## 实际验证
 
-`backend: python -m pytest tests -q`：**178 passed，2 skipped，9 warnings**。
+`backend: python -m pytest tests -q`：**192 passed，2 skipped，9 warnings**。
 
 真实 MySQL 8.4 一次性容器验证：`tests/test_phase7_persistence.py` **7 passed，10 warnings**；容器已删除。真实 Redis 阶段验证仍见 Phase 6 记录。
 `git diff --check`：通过。
@@ -161,3 +161,7 @@ README 已按现有代码重写，新增约束层可复现 benchmark、原始结
 ## Phase 23 修改
 
 前端依赖审计从 15 项降为当前 0 项；Result 与导出库按需加载。build 通过，浏览器 5 passed（含实际 PDF 下载）。大包警告保留，远端 CI 未验证。见 [phase23.md](phase23.md)。
+
+## Phase 24 修改
+
+自由文本提取预览与显式确认已实现，真实单例提取通过；后端 192 passed、2 skipped，浏览器 7 passed，build 通过。详见 [phase24.md](phase24.md)。官方证据与营业/预约校验为下一目标。

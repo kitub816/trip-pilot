@@ -16,6 +16,8 @@ from ...services.route_service import get_route_optimizer
 from ...services.validation_service import get_plan_validator
 from ...workflows.trip_workflow import TripPlanningWorkflow
 
+from ...services.extraction_service import ConstraintExtractor, ExtractionPreview, ExtractionRequest
+
 router = APIRouter(prefix="/trip", tags=["旅行规划"])
 
 
@@ -90,3 +92,8 @@ def update_plan(plan_id: str, request: TripPlanUpdateRequest):
 def health_check():
     validate_config()
     return {"status": "configured", "service": "trip-planner", "external_dependencies": "not_checked"}
+
+
+@router.post("/extract", response_model=ExtractionPreview, summary="预览自由文本中的硬约束")
+def extract_constraints(request: ExtractionRequest):
+    return ConstraintExtractor().extract(request.text)

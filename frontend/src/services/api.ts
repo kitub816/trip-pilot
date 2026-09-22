@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { TripFormData, TripPlan, TripPlanResponse } from '@/types'
+import type { TripFormData, TripPlan, TripPlanResponse, ExtractionPreview } from '@/types'
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin
 
@@ -51,3 +51,16 @@ export async function getAttractionPhoto(name: string, signal?: AbortSignal): Pr
 }
 
 export default apiClient
+
+export async function extractConstraints(text: string): Promise<ExtractionPreview> {
+  try {
+    const response = await apiClient.post<ExtractionPreview>("/api/trip/extract", { text })
+    return response.data
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const message = error.response?.data?.message
+      throw new Error(typeof message === "string" ? message : "提取失败，请手动填写约束")
+    }
+    throw error
+  }
+}
