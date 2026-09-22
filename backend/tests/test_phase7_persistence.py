@@ -1,3 +1,4 @@
+from app.models.validation import PlanValidationResult
 """Phase 7 durable plan records, optimistic versions, and API retrieval."""
 
 import os
@@ -114,7 +115,7 @@ def test_api_returns_id_reads_and_updates_persisted_plan(tmp_path, monkeypatch):
     store.initialize()
     monkeypatch.setattr(trip, "get_plan_store", lambda: store)
     monkeypatch.setattr(
-        trip, "get_plan_validator", lambda: SimpleNamespace(validate_or_raise=lambda *_: None),
+        trip, "get_plan_validator", lambda: SimpleNamespace(validate=lambda *_: PlanValidationResult()),
     )
     monkeypatch.setattr(
         trip,

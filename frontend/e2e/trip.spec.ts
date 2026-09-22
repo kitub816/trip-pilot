@@ -139,3 +139,19 @@ test('extraction failure leaves manual planning available', async ({ page }) => 
   await expect(page.getByText('未能提取可靠约束，请手动填写')).toBeVisible()
   await expect(page.getByRole('button', { name: '开始规划我的旅行' })).toBeEnabled()
 })
+
+
+test('official sources and reservation uncertainty are visible', async ({ page }) => {
+  await page.addInitScript(p => {
+    sessionStorage.setItem('tripPlan', JSON.stringify({ ...p,
+      evidence: [{ poi_id: 'fixture', content: '需要提前实名预约',
+        source_url: 'https://www.dpm.org.cn/singles_detail/259831.html',
+        captured_at: '2026-09-22T00:00:00Z', status: 'verified' }],
+      validation_warnings: [{ code: 'RESERVATION_REQUIRED', subject: '故宫' }]
+    }))
+  }, plan)
+  await page.goto('/result')
+  await expect(page.getByRole('link', { name: '查看来源' })).toHaveAttribute('href',
+    'https://www.dpm.org.cn/singles_detail/259831.html')
+  await expect(page.getByText('需要预约；请自行核对余票并完成预约', { exact: false })).toBeVisible()
+})

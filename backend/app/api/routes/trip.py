@@ -1,6 +1,7 @@
 """Trip API; synchronous SDK calls run in FastAPI's worker pool."""
 from fastapi import APIRouter
-from ...errors import AppError, PersistenceUnavailable
+from ...errors import AppError, PersistenceUnavailable, PlanValidationError
+from ...services.rag_service import retrieve_plan_evidence
 from ...models.schemas import (
     StoredTripPlanResponse,
     TripPlanResponse,
@@ -84,7 +85,12 @@ def update_plan(plan_id: str, request: TripPlanUpdateRequest):
     constraints = build_travel_constraints(current.request)
     plan = get_route_optimizer().apply(request.data, constraints)
     plan = get_budget_engine().apply(plan, constraints)
-    get_plan_validator().validate_or_raise(plan, constraints)
+    evidence = retrieve_plan_evidence(plan)
+    result = get_plan_validator().validate(plan, constraints, evidence)
+    if not result.is_valid:
+        raise PlanValidationError()
+    plan = plan.model_copy(update={"evidence": list(evidence),
+                                  "validation_warnings": list(result.violations)})
     record = store.replace(plan_id, plan, request.expected_version)
     return _response(record, "旅行计划更新成功")
 

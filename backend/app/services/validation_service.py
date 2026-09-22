@@ -15,7 +15,7 @@ class PlanValidator:
 
     def validate(
         self, plan: TripPlan, constraints: TravelConstraints,
-        evidence: tuple[TravelEvidence, ...] = (),
+        evidence: tuple[TravelEvidence, ...] | None = None,
     ) -> PlanValidationResult:
         violations: list[PlanViolation] = []
         self._validate_dates(plan, constraints, violations)
@@ -23,13 +23,13 @@ class PlanValidator:
         self._validate_places(plan, constraints, violations)
         self._validate_routes(plan, violations)
         self._validate_visit_windows(plan, violations)
-        if evidence:
-            self._validate_evidence(plan, evidence, violations)
+        if evidence is not None or constraints.avoid_reservation_required:
+            self._validate_evidence(plan, evidence or (), violations, constraints.avoid_reservation_required)
         return PlanValidationResult(violations=violations)
 
     def validate_or_raise(
         self, plan: TripPlan, constraints: TravelConstraints,
-        evidence: tuple[TravelEvidence, ...] = (),
+        evidence: tuple[TravelEvidence, ...] | None = None,
     ) -> None:
         if self.validate(plan, constraints, evidence).is_valid:
             return
@@ -167,7 +167,7 @@ class PlanValidator:
 
     def _validate_evidence(
         self, plan: TripPlan, evidence: tuple[TravelEvidence, ...],
-        violations: list[PlanViolation],
+        violations: list[PlanViolation], avoid_reservation_required: bool = False,
     ) -> None:
         by_poi: dict[str, list[TravelEvidence]] = {}
         for item in evidence:
@@ -184,9 +184,33 @@ class PlanValidator:
                 if not records:
                     self._add(violations, "EVIDENCE_UNAVAILABLE", "warning",
                               day_index=day_index, subject=attraction.name)
-                elif any(plan_date in item.facts.closed_dates for item in records):
+                if avoid_reservation_required and not any(
+                    item.facts.reservation_required is False for item in records
+                ) and not any(item.facts.reservation_required is True for item in records):
+                    self._add(violations, "RESERVATION_STATUS_UNKNOWN", "error",
+                              day_index=day_index, subject=attraction.name)
+                if any(plan_date in item.facts.closed_dates for item in records):
                     self._add(violations, "ATTRACTION_CLOSED", "error",
                               day_index=day_index, subject=attraction.name)
+
+                for record in records:
+                    facts = record.facts
+                    if plan_date.weekday() in facts.regular_closed_weekdays:
+                        self._add(violations, "CALENDAR_EXCEPTION_UNVERIFIED", "warning",
+                                  day_index=day_index, subject=attraction.name)
+                    if facts.reservation_required:
+                        self._add(violations, "RESERVATION_REQUIRED",
+                                  "error" if avoid_reservation_required else "warning",
+                                  day_index=day_index, subject=attraction.name)
+                    windows = [w for w in facts.opening_windows if plan_date.month in w.months]
+                    if windows:
+                        if attraction.visit_start is None or attraction.visit_end is None:
+                            self._add(violations, "OPENING_TIME_UNVERIFIED", "warning",
+                                      day_index=day_index, subject=attraction.name)
+                        elif not any(w.opens <= attraction.visit_start < w.last_entry
+                                     and attraction.visit_end <= w.closes for w in windows):
+                            self._add(violations, "OUTSIDE_OPENING_HOURS", "error",
+                                      day_index=day_index, subject=attraction.name)
 
     @staticmethod
     def _matches(constraint_name: str, attraction_name: str) -> bool:

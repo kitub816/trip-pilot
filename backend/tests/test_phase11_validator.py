@@ -146,14 +146,14 @@ def test_plan_update_revalidates_before_persistence(monkeypatch):
         )),
         replace=Mock(),
     )
-    validator = SimpleNamespace(validate_or_raise=Mock(side_effect=PlanValidationError()))
+    validator = SimpleNamespace(validate=Mock(side_effect=PlanValidationError()))
     monkeypatch.setattr(trip, "get_plan_store", lambda: store)
     monkeypatch.setattr(trip, "get_route_optimizer", lambda: PassThrough([], "route"))
     monkeypatch.setattr(trip, "get_budget_engine", lambda: PassThrough([], "budget"))
     monkeypatch.setattr(trip, "get_plan_validator", lambda: validator)
     with pytest.raises(PlanValidationError):
         trip.update_plan("plan-id", TripPlanUpdateRequest(expected_version=1, data=plan()))
-    validator.validate_or_raise.assert_called_once()
+    validator.validate.assert_called_once()
     store.replace.assert_not_called()
 
 

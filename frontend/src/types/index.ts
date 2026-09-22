@@ -72,6 +72,9 @@ export interface WeatherInfo {
 }
 
 export interface TripPlan {
+  evidence?: Array<{ poi_id: string; content: string; source_url: string; captured_at: string; status: string }>
+  validation_warnings?: Array<{ code: string; subject?: string | null }>
+
   city: string
   start_date: string
   end_date: string
@@ -89,6 +92,7 @@ export interface TripFormData {
   transportation: '公共交通' | '自驾' | '步行' | '混合'
   accommodation: '经济型酒店' | '舒适型酒店' | '豪华酒店' | '民宿'
   preferences: string[]
+  avoid_reservation_required?: boolean
   free_text_input: string
   travelers?: number
   budget_limit?: number

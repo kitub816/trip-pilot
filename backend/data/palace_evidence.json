@@ -1,0 +1,43 @@
+{
+  "evidence": [
+    {
+      "poi_id": "B000A8UIN8",
+      "topic": "opening_hours",
+      "content": "故宫旺季8:30开放，16:00停止入馆，17:00闭馆；须提前实名预约。周一通常闭馆，节假日和临时公告可能例外，需复核。",
+      "source_url": "https://www.dpm.org.cn/Visit.html",
+      "captured_at": "2026-09-22T06:55:14.573160+00:00",
+      "applicable_from": "2026-09-22",
+      "applicable_to": "2026-10-31",
+      "status": "verified",
+      "facts": {
+        "opening_windows": [
+          {
+            "months": [
+              9,
+              10
+            ],
+            "opens": "08:30",
+            "last_entry": "16:00",
+            "closes": "17:00"
+          }
+        ],
+        "regular_closed_weekdays": [
+          0
+        ]
+      }
+    },
+    {
+      "poi_id": "B000A8UIN8",
+      "topic": "reservation",
+      "content": "故宫参观须提前实名预约。此记录仅描述预约要求，不代表有票、已购票或已核验预约。",
+      "source_url": "https://www.dpm.org.cn/singles_detail/259831.html",
+      "captured_at": "2026-09-22T06:55:14.573160+00:00",
+      "applicable_from": "2026-09-22",
+      "applicable_to": "2026-10-31",
+      "status": "verified",
+      "facts": {
+        "reservation_required": true
+      }
+    }
+  ]
+}

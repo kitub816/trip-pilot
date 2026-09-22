@@ -58,3 +58,7 @@
 ## Phase 22–24 更新
 
 用户已明确授权连续优化。已完成浏览器契约回归、依赖修复和按需导出、自由文本约束提取预览。当前后端 192 passed、2 skipped，浏览器 7 passed，build 通过。下一步官方证据与营业/预约校验；主规划的自动语义提取、全栈浏览器真实联调、持久 checkpoint 与远端 CI 不应声称完成。详见 phase22.md 至 phase24.md。
+
+## Phase 25 更新
+
+故宫官方证据、营业时段与免预约约束、引用和 warning 持久化展示已完成。202 passed、2 skipped；8 项浏览器回归，build 通过。具体边界见 [phase25.md](phase25.md)，下一项持久 checkpoint。

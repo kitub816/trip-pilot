@@ -51,6 +51,7 @@ class TravelConstraints(BaseModel):
     transportation: TransportationMode
     accommodation: AccommodationType
     preferences: tuple[str, ...] = ()
+    avoid_reservation_required: bool = False
     free_text_input: str = ""
     travelers: int = Field(default=1, ge=1, le=20)
     budget_limit: Decimal | None = Field(default=None, gt=0)
@@ -109,6 +110,7 @@ def build_travel_constraints(
         accommodation=request.accommodation,
         preferences=request.preferences,
         free_text_input=request.free_text_input,
+        avoid_reservation_required=request.avoid_reservation_required,
         travelers=_prefer_explicit(request.travelers, semantic.travelers, 1),
         budget_limit=_prefer_explicit(request.budget_limit, semantic.budget_limit),
         currency=_prefer_explicit(request.currency, semantic.currency, "CNY"),

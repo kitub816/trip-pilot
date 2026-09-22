@@ -35,6 +35,14 @@
       </a-space>
     </div>
 
+    <a-card v-if="tripPlan?.evidence?.length || tripPlan?.validation_warnings?.length" title="来源与待确认事项">
+      <p v-for="(item, index) in tripPlan.evidence" :key="'e' + index">
+        {{ item.content }} <a :href="item.source_url" target="_blank" rel="noopener noreferrer">查看来源</a>
+      </p>
+      <p v-for="(item, index) in tripPlan.validation_warnings" :key="'w' + index">
+        {{ item.subject || '行程' }}：{{ warningText[item.code] || '部分信息仍需核实' }}
+      </p>
+    </a-card>
     <div v-if="tripPlan" class="content-wrapper">
       <!-- 侧边导航 -->
       <div class="side-nav">
@@ -326,6 +334,15 @@ const router = useRouter()
 const tripPlan = ref<TripPlan | null>(null)
 const editMode = ref(false)
 const saving = ref(false)
+const warningText: Record<string, string> = {
+  RESERVATION_REQUIRED: '需要预约；请自行核对余票并完成预约',
+  RESERVATION_STATUS_UNKNOWN: '预约要求尚不明确',
+  CALENDAR_EXCEPTION_UNVERIFIED: '通常闭馆日，请核对法定节假日及临时开放公告',
+  OPENING_TIME_UNVERIFIED: '未安排到访时刻，尚未完成营业时间校验',
+  EVIDENCE_UNAVAILABLE: '缺少适用的官方证据',
+  BUDGET_INCOMPLETE: '部分费用未知',
+  VISIT_TIME_INCOMPLETE: '部分到访时刻缺失'
+}
 const planRef = ref<{ planId: string; version: number } | null>(null)
 const originalPlan = ref<TripPlan | null>(null)
 const attractionPhotos = ref<Record<string, string>>({})

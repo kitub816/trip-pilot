@@ -1,6 +1,6 @@
 """Local, provenance-preserving retrieval for travel facts.
 
-The default corpus is deliberately empty.  Production evidence must be supplied
+The bundled corpus covers only the verified Palace Museum POI.  Production evidence must be supplied
 through ``RAG_KNOWLEDGE_PATH`` as source-attributed JSON; this service never
 creates opening-hours or reservation claims from an LLM response.
 """
@@ -16,7 +16,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from ..config import get_settings
 from ..models.knowledge import EvidenceWarning, TravelEvidence
-from ..models.schemas import POIInfo
+from ..models.schemas import POIInfo, TripPlan
 
 
 class EvidenceStore(Protocol):
@@ -95,7 +95,8 @@ def get_travel_rag_service() -> TravelRagService:
     if _rag_service is None:
         config_path = get_settings().rag_knowledge_path.strip()
         _rag_service = TravelRagService(
-            FileEvidenceStore(Path(config_path) if config_path else None),
+            FileEvidenceStore(Path(config_path) if config_path else
+                              Path(__file__).resolve().parents[2] / "data" / "palace_evidence.json"),
             get_settings().rag_max_evidence_per_poi,
         )
     return _rag_service
@@ -104,3 +105,12 @@ def get_travel_rag_service() -> TravelRagService:
 def reset_travel_rag_service() -> None:
     global _rag_service
     _rag_service = None
+
+
+def retrieve_plan_evidence(plan: TripPlan) -> tuple[TravelEvidence, ...]:
+    """Reload trusted local evidence for edits; never trust client-submitted sources."""
+    candidates = tuple(POIInfo(id=item.poi_id, name=item.name, address=item.address,
+                              location=item.location, type="景点")
+                       for day in plan.days for item in day.attractions if item.poi_id)
+    return retrieve_trip_evidence(candidates, date.fromisoformat(plan.start_date),
+                                 date.fromisoformat(plan.end_date)).evidence

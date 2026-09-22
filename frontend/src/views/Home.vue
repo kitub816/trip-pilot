@@ -156,6 +156,7 @@
             <a-col :span="12"><a-form-item label="避开地点（逗号分隔）"><a-input v-model:value="avoidPlacesText" /></a-form-item></a-col>
           </a-row>
         </div>
+        <a-checkbox v-model:checked="formData.avoid_reservation_required">仅安排无需预约的景点（预约要求不明时不会视为通过）</a-checkbox>
         <!-- 第三步:额外要求 -->
         <div class="form-section">
           <div class="section-header">
@@ -328,6 +329,7 @@ const handleSubmit = async () => {
       accommodation: formData.accommodation,
       preferences: formData.preferences,
       free_text_input: formData.free_text_input,
+      avoid_reservation_required: formData.avoid_reservation_required,
       travelers: formData.travelers,
       budget_limit: formData.budget_limit,
       currency: formData.budget_limit ? 'CNY' : undefined,

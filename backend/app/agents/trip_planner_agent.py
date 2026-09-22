@@ -219,6 +219,7 @@ class MultiAgentTripPlanner:
 - 偏好: {', '.join(request.preferences) if request.preferences else '无'}
 - 出行人数: {request.travelers}
 - 总预算上限: {f'{request.budget_limit} {request.currency}' if request.budget_limit is not None else '未指定'}
+- 是否仅允许无需预约景点: {request.avoid_reservation_required}
 - 必去地点: {', '.join(request.must_visit) if request.must_visit else '无'}
 - 避开地点: {', '.join(request.avoid_places) if request.avoid_places else '无'}
 - 每日步行上限: {f'{request.max_daily_walking_km}公里' if request.max_daily_walking_km is not None else '未指定'}

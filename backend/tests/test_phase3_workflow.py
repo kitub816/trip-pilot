@@ -10,7 +10,7 @@ from app.workflows.trip_workflow import TripPlanningWorkflow
 
 
 class PassValidator:
-    def validate(self, plan, constraints):
+    def validate(self, plan, constraints, evidence=()):
         return PlanValidationResult()
 
 

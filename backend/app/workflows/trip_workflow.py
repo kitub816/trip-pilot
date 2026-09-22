@@ -160,14 +160,17 @@ class TripPlanningWorkflow:
         plan = state["plan"]
         if plan is None:
             return {"status": "failed", "error": upstream_failure(RuntimeError("missing plan"))}
-        if state["evidence"]:
-            result = self._validator.validate(plan, state["constraints"], state["evidence"])
-        else:
-            result = self._validator.validate(plan, state["constraints"])
+        result = self._validator.validate(plan, state["constraints"], state["evidence"])
         for violation in result.violations:
             logger.info("validation.finding.%s.%s", violation.severity, violation.code)
         if result.is_valid:
-            return {"status": "completed", "violations": tuple(result.violations), "error": None}
+            selected = {item.poi_id for day in plan.days for item in day.attractions}
+            validated = plan.model_copy(update={
+                "evidence": [item for item in state["evidence"] if item.poi_id in selected],
+                "validation_warnings": [v for v in result.violations if v.severity == "warning"],
+            })
+            return {"status": "completed", "plan": validated,
+                    "violations": tuple(result.violations), "error": None}
         if state["replan_attempts"] >= self._max_replan_attempts or state["retrieval"] is None:
             return {
                 "status": "failed", "violations": tuple(result.violations),
@@ -194,7 +197,7 @@ class TripPlanningWorkflow:
                 raise PlanValidationError()
             arguments = (
                 state["constraints"], retrieval.attractions, retrieval.weather,
-                retrieval.hotels, state["violations"],
+                retrieval.hotels, tuple(v for v in state["violations"] if v.severity == "error"),
             )
             if state["evidence"]:
                 plan = planner.replan_from_retrieval(*arguments, evidence=state["evidence"])

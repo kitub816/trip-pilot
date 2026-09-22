@@ -8,6 +8,9 @@ from typing import List, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+from .knowledge import TravelEvidence
+from .validation import PlanViolation
+
 # ============ 请求模型 ============
 
 class ValueEnum(str, Enum):
@@ -41,6 +44,7 @@ class TripRequest(BaseModel):
     transportation: TransportationMode
     accommodation: AccommodationType
     preferences: list[str] = Field(default_factory=list, max_length=30)
+    avoid_reservation_required: bool = False
     free_text_input: str = Field(default="", max_length=2000)
     travelers: int | None = Field(default=None, ge=1, le=20)
     budget_limit: Decimal | None = Field(default=None, gt=0, max_digits=10, decimal_places=2)
@@ -242,6 +246,8 @@ class Budget(BaseModel):
 
 class TripPlan(BaseModel):
     """旅行计划"""
+    evidence: list[TravelEvidence] = Field(default_factory=list)
+    validation_warnings: list[PlanViolation] = Field(default_factory=list)
     city: str = Field(..., description="目的地城市")
     start_date: str = Field(..., description="开始日期")
     end_date: str = Field(..., description="结束日期")
