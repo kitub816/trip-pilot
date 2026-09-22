@@ -29,12 +29,20 @@ export async function getTripPlan(planId: string): Promise<{ data: TripPlan; ver
 }
 
 export async function updateTripPlan(planId: string, expectedVersion: number, data: TripPlan): Promise<{ data: TripPlan; version: number }> {
+  try {
   const response = await apiClient.put(`/api/trip/plans/${encodeURIComponent(planId)}`, {
     expected_version: expectedVersion,
     data
   })
   if (!response.data.data) throw new Error('更新后的计划不可用')
   return { data: response.data.data, version: response.data.version }
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const message = error.response?.data?.message
+      throw new Error(typeof message === "string" ? message : "保存失败，请刷新后重试")
+    }
+    throw error
+  }
 }
 
 export async function getAttractionPhoto(name: string, signal?: AbortSignal): Promise<string | null> {

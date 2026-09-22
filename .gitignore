@@ -34,3 +34,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Browser test artifacts
+playwright-report/
+test-results/
