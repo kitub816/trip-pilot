@@ -10,3 +10,7 @@
 修改 frontend/src/services/api.ts、frontend/nginx.conf、frontend/e2e/trip.spec.ts、backend/app/models/schemas.py、backend/app/api/routes/map.py 和文档。主架构不变。服务端取消、全局截止时间、HTTP checkpoint 恢复、远端 CI 和大样本真实评测仍未完成。
 
 容器验证阻塞：Docker Engine 未启动或不可连接；已尝试启动现有 Docker Desktop，仍无法连接 named pipe。Nginx 配置尚未实际执行 nginx -t，需引擎恢复后补验，未声称容器通过。远端 CI 等待目标仓库和新分支推送授权。
+
+## Docker 补验
+
+用户启动 Docker 后，使用现有前端镜像复制当前 nginx.conf 并实际运行 nginx -t：syntax is ok / test is successful。Windows bind mount 路径不可用，改用临时容器 docker cp；容器已清理。仅验证配置语法，不代表新镜像构建或完整 Compose 联调。

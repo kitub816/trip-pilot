@@ -179,3 +179,5 @@ README 已按现有代码重写，新增约束层可复现 benchmark、原始结
 规划请求和代理等待统一为 600 秒；受控浏览器时钟验证超过旧 120 秒阈值后仍能成功。清理项目自身弃用警告。205 passed、2 skipped、1 warning；浏览器 9 passed；build 通过。见 [phase27.md](phase27.md)。
 
 容器验证阻塞：Docker Engine 未启动或不可连接；已尝试启动现有 Docker Desktop，仍无法连接 named pipe。Nginx 配置尚未实际执行 nginx -t，需引擎恢复后补验，未声称容器通过。远端 CI 等待目标仓库和新分支推送授权。
+
+Docker Nginx 配置补验通过；用户已授权推送 https://github.com/kitub816/trip-pilot 的新分支验证 CI，正在执行。
