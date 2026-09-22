@@ -44,3 +44,7 @@ Datawhale Hello-Agents 第 13 章旅行助手已经渐进重构为 TripPilot 工
 ## 2026-09-20 更新
 
 Phase 19 到访时间窗已落地；Phase 20 完成真实高德/LLM 固定案例初测和坐标路线、Planner null 字段修复。三例初测中上海步行与杭州自驾成功，北京公共交通失败；公交 MCP stdout 缺陷已绕开，但北京复测仍返回 422。后端回归 171 passed、2 skipped；结果和边界见 [phase20.md](phase20.md)、[live_e2e_results.json](live_e2e_results.json) 与 [progress.md](progress.md)。上文 2026-09-19 交接数字保留历史原样。
+
+## 2026-09-22：Phase 21 完成
+
+北京公交真实单例复测通过（运行于 2026-09-20），后端回归 178 passed、2 skipped。已补公交业务限流重试、保序相邻路线查询、带交通秒数的重规划反馈与 Redis 总超时归一化。历史 Phase 20 失败结果保留。详见 [phase21.md](phase21.md)。下一建议是浏览器 E2E；当前阶段完成后停止。

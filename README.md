@@ -69,7 +69,7 @@ cd ..\frontend
 npm run build
 ```
 
-最近一次后端完整离线回归为 **171 passed、2 skipped**；前端生产构建通过。固定约束评测集为 **3/3**，数据和运行器分别在 `backend/evaluation/constraint_cases.json`、`backend/evaluation/benchmark.py`。一次本机测量的约束解析 P50/P95 见 [原始结果](docs/benchmark_results.json)；它不包含地图、LLM、路线或网络耗时，也不代表线上规划性能。三条固定真实高德/LLM 案例初测中两条通过、一条失败，详见 [逐例结果](docs/live_e2e_results.json)；该小样本不是线上成功率。未取得可审计的 provider token、成本或缓存命中率，因此不提供这些数字。
+最近一次后端完整离线回归为 **178 passed、2 skipped**；前端生产构建通过。固定约束评测集为 **3/3**，数据和运行器分别在 `backend/evaluation/constraint_cases.json`、`backend/evaluation/benchmark.py`。一次本机测量的约束解析 P50/P95 见 [原始结果](docs/benchmark_results.json)；它不包含地图、LLM、路线或网络耗时，也不代表线上规划性能。三条固定真实高德/LLM 案例初测中两条通过、一条失败，详见 [逐例结果](docs/live_e2e_results.json)；该小样本不是线上成功率。未取得可审计的 provider token、成本或缓存命中率，因此不提供这些数字。
 
 ## 已知限制
 
@@ -81,3 +81,5 @@ npm run build
 - 前端缺少浏览器端到端测试，构建仍提示大包；Docker 构建中 `npm ci` 报告的依赖告警需要逐项审计。GitHub Actions 工作流已提交，但尚未在远端验证。
 
 阶段过程和实测证据见 [项目进度](docs/progress.md)、[重构计划](docs/refactor_plan.md) 与 [Phase 0 架构分析](docs/current_architecture.md)。
+
+Phase 21 已修复北京公交限流重试和交通时长反馈，原失败案例单独复测通过；属于单例结果，不改变历史三例初测记录，也不代表线上成功率。详见 [阶段记录](docs/phase21.md)。

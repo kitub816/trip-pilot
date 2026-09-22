@@ -1,0 +1,24 @@
+{
+  "scope": "one live FastAPI TestClient request through configured MCP and LLM",
+  "city": "北京",
+  "start_date": "2026-10-20",
+  "transportation": "公共交通",
+  "http_status": 200,
+  "elapsed_seconds": 132.63,
+  "success": true,
+  "error_code": null,
+  "tool_calls_completed": 26,
+  "tool_calls_failed": 0,
+  "tool_failure_codes": {},
+  "validation_findings": {
+    "validation.finding.warning.BUDGET_INCOMPLETE": 2,
+    "validation.finding.error.VISIT_TIME_CONFLICT": 2
+  },
+  "days": 1,
+  "attractions": 3,
+  "timed_attractions": 3,
+  "routes_complete": true,
+  "hard_constraints_validated": true,
+  "provider_token_usage": null,
+  "provider_cost": null
+}

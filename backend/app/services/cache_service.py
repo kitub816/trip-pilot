@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, Valid
 from redis.asyncio import Redis
 from redis.asyncio.retry import Retry
 from redis.backoff import NoBackoff
-from redis.exceptions import RedisError
+from redis.exceptions import RedisError, TimeoutError as RedisTimeoutError
 
 from ..config import get_settings
 
@@ -44,10 +44,16 @@ class RedisBackend:
             socket_connect_timeout=self._timeout, retry=Retry(NoBackoff(), 0))
 
     async def get(self, key: str) -> bytes | None:
-        return await asyncio.wait_for(self._get(key), timeout=self._timeout)
+        try:
+            return await asyncio.wait_for(self._get(key), timeout=self._timeout)
+        except asyncio.TimeoutError:
+            raise RedisTimeoutError("cache operation timed out") from None
 
     async def set(self, key: str, value: bytes, ttl: int) -> None:
-        await asyncio.wait_for(self._set(key, value, ttl), timeout=self._timeout)
+        try:
+            await asyncio.wait_for(self._set(key, value, ttl), timeout=self._timeout)
+        except asyncio.TimeoutError:
+            raise RedisTimeoutError("cache operation timed out") from None
 
     async def _get(self, key: str) -> bytes | None:
         async with self._client() as client:

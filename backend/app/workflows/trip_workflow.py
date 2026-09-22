@@ -164,6 +164,8 @@ class TripPlanningWorkflow:
             result = self._validator.validate(plan, state["constraints"], state["evidence"])
         else:
             result = self._validator.validate(plan, state["constraints"])
+        for violation in result.violations:
+            logger.info("validation.finding.%s.%s", violation.severity, violation.code)
         if result.is_valid:
             return {"status": "completed", "violations": tuple(result.violations), "error": None}
         if state["replan_attempts"] >= self._max_replan_attempts or state["retrieval"] is None:

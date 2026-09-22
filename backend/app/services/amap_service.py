@@ -216,7 +216,13 @@ class AmapService:
                         payload = response.json()
                     except ValueError as exc:
                         raise ToolProtocolError() from None
-                    result = self._parse_route(payload, "transit")
+                    try:
+                        result = self._parse_route(payload, "transit")
+                    except ToolRateLimit:
+                        if attempt == 0:
+                            await asyncio.sleep(1.0)
+                            continue
+                        raise
                     logger.info("tool.completed.maps_direction_transit_direct")
                     return result
             raise UpstreamError()

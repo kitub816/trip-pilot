@@ -4,6 +4,7 @@ Run from backend: python -m evaluation.live_smoke
 The JSON summary contains no keys, prompts, raw provider responses or plan contents.
 """
 import json
+from collections import Counter
 import logging
 import sys
 import time
@@ -30,24 +31,32 @@ class ToolEventCounter(logging.Handler):
         super().__init__()
         self.completed = 0
         self.failed = 0
+        self.failure_codes: Counter[str] = Counter()
+        self.validation_codes: Counter[str] = Counter()
 
     def emit(self, record: logging.LogRecord) -> None:
         if record.msg.startswith("tool.completed."):
             self.completed += 1
         elif record.msg.startswith("tool.failed."):
             self.failed += 1
+            self.failure_codes[record.getMessage()] += 1
+        elif str(record.msg).startswith("validation.finding."):
+            self.validation_codes[record.getMessage()] += 1
 
 
 def run_case(case: dict[str, object]) -> dict[str, object]:
     counter = ToolEventCounter()
     tool_logger = logging.getLogger("trippilot.tools")
     tool_logger.addHandler(counter)
+    workflow_logger = logging.getLogger("trippilot.workflow")
+    workflow_logger.addHandler(counter)
     started = time.perf_counter()
     try:
         with TestClient(create_app()) as client:
             response = client.post("/api/trip/plan", json=case)
     finally:
         tool_logger.removeHandler(counter)
+        workflow_logger.removeHandler(counter)
     payload = response.json()
     success = response.status_code == 200 and payload.get("success") is True
     data = payload.get("data") if success else None
@@ -63,6 +72,8 @@ def run_case(case: dict[str, object]) -> dict[str, object]:
         "error_code": payload.get("error_code") if not success else None,
         "tool_calls_completed": counter.completed,
         "tool_calls_failed": counter.failed,
+        "tool_failure_codes": dict(counter.failure_codes),
+        "validation_findings": dict(counter.validation_codes),
         "days": len(days) if success else None,
         "attractions": sum(len(day.get("attractions", [])) for day in days) if success else None,
         "timed_attractions": sum(sum(item.get("visit_start") is not None

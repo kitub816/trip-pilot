@@ -37,6 +37,9 @@ class PlanViolation(BaseModel):
     severity: Literal["error", "warning"]
     day_index: int | None = Field(default=None, ge=0)
     subject: str | None = Field(default=None, max_length=200)
+    origin: str | None = Field(default=None, max_length=200)
+    required_travel_seconds: int | None = Field(default=None, ge=0)
+    available_gap_seconds: int | None = None
 
 
 class PlanValidationResult(BaseModel):

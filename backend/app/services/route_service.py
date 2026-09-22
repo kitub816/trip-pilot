@@ -51,9 +51,10 @@ class RouteOptimizer:
 
         points = attractions[:self.max_points]
         trailing = attractions[self.max_points:]
-        matrix = await self._matrix(points, constraints.city, route_type)
+        scheduled = any(item.visit_start is not None for item in points)
+        matrix = await self._matrix(points, constraints.city, route_type, adjacent_only=scheduled)
         # Explicit visit times fix the order; reordering would invalidate the schedule.
-        order = (list(range(len(points))) if any(item.visit_start is not None for item in points)
+        order = (list(range(len(points))) if scheduled
                  else self._order(points, matrix, constraints.max_single_transport_minutes))
         ordered = [points[index] for index in order] + trailing
         legs, warnings = self._legs(points, order, matrix, constraints)
@@ -78,6 +79,7 @@ class RouteOptimizer:
 
     async def _matrix(
         self, points: list[Attraction], city: str, route_type: str,
+        *, adjacent_only: bool = False,
     ) -> dict[tuple[int, int], RouteInfo | None]:
         quota = asyncio.Semaphore(self.concurrency)
         matrix: dict[tuple[int, int], RouteInfo | None] = {}
@@ -107,7 +109,7 @@ class RouteOptimizer:
 
         tasks = [asyncio.create_task(fetch(origin, destination))
                  for origin in range(len(points)) for destination in range(len(points))
-                 if origin != destination]
+                 if (destination == origin + 1 if adjacent_only else origin != destination)]
         try:
             await asyncio.wait_for(asyncio.gather(*tasks), timeout=self.matrix_timeout)
         except (asyncio.TimeoutError, TimeoutError):

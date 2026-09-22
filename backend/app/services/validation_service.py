@@ -159,8 +159,11 @@ class PlanValidator:
                 gap = (datetime.combine(date.min, later.visit_start)
                        - datetime.combine(date.min, earlier.visit_end)).total_seconds()
                 if gap < required:
-                    self._add(violations, "VISIT_TIME_CONFLICT", "error",
-                              day_index=day.day_index, subject=later.name)
+                    violations.append(PlanViolation(
+                        code="VISIT_TIME_CONFLICT", severity="error",
+                        day_index=day.day_index, subject=later.name, origin=earlier.name,
+                        required_travel_seconds=required, available_gap_seconds=int(gap),
+                    ))
 
     def _validate_evidence(
         self, plan: TripPlan, evidence: tuple[TravelEvidence, ...],
