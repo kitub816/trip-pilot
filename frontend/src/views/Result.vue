@@ -319,8 +319,6 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { DownOutlined } from '@ant-design/icons-vue'
 import AMapLoader from '@amap/amap-jsapi-loader'
-import html2canvas from 'html2canvas'
-import jsPDF from 'jspdf'
 import type { TripPlan } from '@/types'
 import { getAttractionPhoto, getTripPlan, updateTripPlan } from '@/services/api'
 
@@ -505,6 +503,7 @@ const handleImageError = (event: Event) => {
 // 导出为图片
 const exportAsImage = async () => {
   try {
+    const { default: html2canvas } = await import('html2canvas')
     message.loading({ content: '正在生成图片...', key: 'export', duration: 0 })
 
     const element = document.querySelector('.main-content') as HTMLElement
@@ -642,6 +641,9 @@ const exportAsImage = async () => {
 // 导出为PDF
 const exportAsPDF = async () => {
   try {
+    const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+      import('html2canvas'), import('jspdf')
+    ])
     message.loading({ content: '正在生成PDF...', key: 'export', duration: 0 })
 
     const element = document.querySelector('.main-content') as HTMLElement

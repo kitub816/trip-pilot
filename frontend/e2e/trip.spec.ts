@@ -93,3 +93,20 @@ test('save conflict explains recovery and preserves unsaved edits', async ({ pag
   await expect(page.getByText('计划已更新，请刷新后重试')).toBeVisible()
   await expect(page.getByRole('button', { name: '取消编辑' })).toBeVisible()
 })
+
+
+test('PDF export downloads a real PDF after dependency upgrade', async ({ page }) => {
+  await openStored(page)
+  await page.getByRole('button', { name: '导出行程' }).hover()
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByText('导出为PDF', { exact: false }).click()
+  const download = await downloadPromise
+  expect(download.suggestedFilename()).toMatch(/\.pdf$/)
+  expect(await download.failure()).toBeNull()
+  const stream = await download.createReadStream()
+  const chunks: Buffer[] = []
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk))
+  const bytes = Buffer.concat(chunks)
+  expect(bytes.subarray(0, 5).toString()).toBe('%PDF-')
+  expect(bytes.length).toBeGreaterThan(1000)
+})
