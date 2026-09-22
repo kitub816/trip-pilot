@@ -60,3 +60,7 @@ Phase 19 到访时间窗已落地；Phase 20 完成真实高德/LLM 固定案例
 ## Phase 26 更新
 
 本地 SQLite checkpoint/恢复 CLI 已验证，稳定依赖在 backend/.venv，205 passed、2 skipped。HTTP 自动恢复仍未实现。详见 [phase26.md](phase26.md)。
+
+## 2026-09-22 当前验证
+
+阶段 22–27 已补浏览器回归、前端依赖审计、提取预览、故宫有限官方证据、SQLite 本地 checkpoint 与长请求等待修复。项目 .venv 后端 205 passed、2 skipped、1 warning；浏览器 9 passed；build 通过。远端 CI 无 remote，等待用户目标仓库与推送授权；不能声称原始规格全部完成。

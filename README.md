@@ -86,4 +86,6 @@ Phase 21 已修复北京公交限流重试和交通时长反馈，原失败案�
 
 2026-09-22 更新：已增加自由文本约束提取预览（用户确认后填入空白字段）、7 项浏览器 API 契约回归、PDF 下载验证；依赖审计当前为 0 项。浏览器测试使用固定 API 响应，远端 CI 未验证。
 
-持久工作流运行时已固定稳定 LangGraph 版本。安装新 requirements 后再运行；本机可使用 backend/.venv/Scripts/python.exe。浏览器回归当前 8 项。
+持久工作流运行时已固定稳定 LangGraph 版本。安装新 requirements 后再运行；本机可使用 backend/.venv/Scripts/python.exe。浏览器回归当前 9 项。
+
+规划请求前端和代理等待为 600 秒；超时不等于后端取消。最近后端回归 205 passed、2 skipped、1 条第三方警告。

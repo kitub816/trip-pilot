@@ -155,3 +155,24 @@ test('official sources and reservation uncertainty are visible', async ({ page }
     'https://www.dpm.org.cn/singles_detail/259831.html')
   await expect(page.getByText('需要预约；请自行核对余票并完成预约', { exact: false })).toBeVisible()
 })
+
+
+test('planning remains pending beyond the former two-minute timeout', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-01T12:00:00') })
+  let release!: () => void
+  const pending = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/api/trip/plan', async route => {
+    await pending
+    await route.fulfill({ json: { success: true, data: plan } })
+  })
+  await fillRequest(page)
+  const requested = page.waitForRequest('**/api/trip/plan')
+  await page.getByRole('button', { name: '开始规划我的旅行' }).click()
+  await requested
+  await page.clock.fastForward(121000)
+  await expect(page.getByText('等待规划结果超时', { exact: false })).toHaveCount(0)
+  release()
+  await expect(page.getByText('旅行计划生成成功!')).toBeVisible()
+  await page.clock.fastForward(1000)
+  await expect(page).toHaveURL(/result$/)
+})

@@ -11,11 +11,12 @@ const apiClient = axios.create({
 
 export async function generateTripPlan(formData: TripFormData, signal?: AbortSignal): Promise<TripPlanResponse> {
   try {
-    const response = await apiClient.post<TripPlanResponse>('/api/trip/plan', formData, { signal })
+    const response = await apiClient.post<TripPlanResponse>('/api/trip/plan', formData, { signal, timeout: 600000 })
     return response.data
   } catch (error) {
     if (axios.isCancel(error)) throw new Error('规划已取消')
     if (axios.isAxiosError(error)) {
+      if (error.code === 'ECONNABORTED') throw new Error('等待规划结果超时，服务端可能仍在处理，请稍后再试')
       throw new Error(error.response?.data?.detail || error.response?.data?.message || '生成旅行计划失败')
     }
     throw new Error('生成旅行计划失败')

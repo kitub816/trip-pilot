@@ -91,15 +91,15 @@ class TripRequest(BaseModel):
 
 class POISearchRequest(BaseModel):
     """POI搜索请求"""
-    keywords: str = Field(..., description="搜索关键词", example="故宫")
-    city: str = Field(..., description="城市", example="北京")
+    keywords: str = Field(..., description="搜索关键词", examples=["故宫"])
+    city: str = Field(..., description="城市", examples=["北京"])
     citylimit: bool = Field(default=True, description="是否限制在城市范围内")
 
 
 class RouteRequest(BaseModel):
     """路线规划请求"""
-    origin_address: str = Field(..., description="起点地址", example="北京市朝阳区阜通东大街6号")
-    destination_address: str = Field(..., description="终点地址", example="北京市海淀区上地十街10号")
+    origin_address: str = Field(..., description="起点地址", examples=["北京市朝阳区阜通东大街6号"])
+    destination_address: str = Field(..., description="终点地址", examples=["北京市海淀区上地十街10号"])
     origin_city: Optional[str] = Field(default=None, description="起点城市")
     destination_city: Optional[str] = Field(default=None, description="终点城市")
     route_type: str = Field(default="walking", description="路线类型: walking/driving/transit")

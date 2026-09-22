@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-Phase 0–26 的阶段代码与记录已落地；关键规格缺口列于下方，不能视为线上验收完成。用户已明确授权连续优化；各阶段独立测试、提交与归档。
+Phase 0–27 的阶段代码与记录已落地；关键规格缺口列于下方，不能视为线上验收完成。用户已明确授权连续优化；各阶段独立测试、提交与归档。
 
 ## 当前架构
 
@@ -97,7 +97,7 @@ JSON 日志补充请求耗时、状态码、稳定错误码和工作流节点名
 
 ## 实际验证
 
-`backend: python -m pytest tests -q`：**205 passed，2 skipped，8 warnings**（项目 .venv 稳定 LangGraph）。
+`backend: python -m pytest tests -q`：**205 passed，2 skipped，1 warning**（项目 .venv 稳定 LangGraph）。
 
 真实 MySQL 8.4 一次性容器验证：`tests/test_phase7_persistence.py` **7 passed，10 warnings**；容器已删除。真实 Redis 阶段验证仍见 Phase 6 记录。
 `git diff --check`：通过。
@@ -112,7 +112,7 @@ JSON 日志补充请求耗时、状态码、稳定错误码和工作流节点名
 - 截止时间触发后仍需执行 SDK 的进程清理，实际返回可多出清理时间。当前 HTTP 同步路由不会在客户端断开时自动取消；原生检索协程本身已支持取消。
 - Planner LLM 仍是同步 HelloAgents 调用，共享实例拒绝重叠规划；已有调用/Prompt 上限和 token 估算，但 SDK 没有可靠 provider usage，尚无真实成本、fallback 或流式策略。
 - ToolResult 提供工具名、抓取时间、尝试次数和耗时；候选级引用和跨节点指标尚未接入。
-- Redis 已作为可选检索缓存接入；MySQL 已提供可选计划记录，前端已接入服务端 GET/PUT。官方语料仅覆盖故宫有限日期，仍缺持久 checkpoint 和大样本线上评测；Phase 20 只完成小样本真实初测。
+- Redis 已作为可选检索缓存接入；MySQL 已提供可选计划记录，前端已接入服务端 GET/PUT。官方语料仅覆盖故宫有限日期，已有本地 SQLite checkpoint/CLI 恢复，仍缺网页恢复和大样本线上评测；Phase 20 只完成小样本真实初测。
 - MySQL 当前使用 `create_all`，没有 Alembic、鉴权、所有权或中断工作流恢复；`planning` 只用于识别未完成请求。
 - 预算单价尚无可靠证据；房间容量固定为 2，交通成本仍缺少可靠供应商报价；前端已展示未知费用状态。
 - 路线使用固定首点的最近邻启发式，不保证全局最优；混合交通暂映射公共交通，尚无逐段多模式比较、路线几何或固定中间点；已有计划到访时刻会保序。
@@ -124,7 +124,7 @@ JSON 日志补充请求耗时、状态码、稳定错误码和工作流节点名
 
 ## 下一阶段
 
-后续优先持久 checkpoint；继续扩大官方语料与真实全栈案例，补实际预约时段校验和 CI 远端执行。北京公交单例复测已通过，见 Phase 21。
+后续优先网页恢复与全栈联调；继续扩大官方语料与真实全栈案例，补实际预约时段校验和 CI 远端执行。北京公交单例复测已通过，见 Phase 21。
 
 ## Phase 16 修改
 
@@ -173,3 +173,9 @@ README 已按现有代码重写，新增约束层可复现 benchmark、原始结
 ## Phase 26 修改
 
 可选 SQLite checkpoint 与本地恢复 CLI 已实现，跨进程读取/不重复已完成规划节点验证通过。网页不自动恢复，模型配额不跨进程累计。205 passed、2 skipped，详见 [phase26.md](phase26.md)。远端 CI 未配置 remote，等待仓库与推送授权。
+
+## Phase 27 修改
+
+规划请求和代理等待统一为 600 秒；受控浏览器时钟验证超过旧 120 秒阈值后仍能成功。清理项目自身弃用警告。205 passed、2 skipped、1 warning；浏览器 9 passed；build 通过。见 [phase27.md](phase27.md)。
+
+容器验证阻塞：Docker Engine 未启动或不可连接；已尝试启动现有 Docker Desktop，仍无法连接 named pipe。Nginx 配置尚未实际执行 nginx -t，需引擎恢复后补验，未声称容器通过。远端 CI 等待目标仓库和新分支推送授权。
