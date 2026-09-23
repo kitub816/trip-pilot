@@ -180,4 +180,4 @@ README 已按现有代码重写，新增约束层可复现 benchmark、原始结
 
 容器验证阻塞：Docker Engine 未启动或不可连接；已尝试启动现有 Docker Desktop，仍无法连接 named pipe。Nginx 配置尚未实际执行 nginx -t，需引擎恢复后补验，未声称容器通过。远端 CI 等待目标仓库和新分支推送授权。
 
-Docker Nginx 配置补验通过；用户已授权推送 https://github.com/kitub816/trip-pilot 的新分支验证 CI，正在执行。
+Docker Nginx 配置补验通过；已推送 `codex/verify-trip-pilot`。GitHub Actions 运行 [35739398025](https://github.com/kitub816/trip-pilot/actions/runs/35739398025) 在提交 `37da895df7f1bdba46a7f4f62fa38809c37d6ac8` 上完成，`backend` 与 `frontend` 均为 success。远端 CI 已完成一次可追溯验证；这不代表真实供应商全链路或部署环境已验收。
