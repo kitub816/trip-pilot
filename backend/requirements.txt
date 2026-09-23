@@ -8,6 +8,7 @@ anyio>=4.8,<5
 jsonschema>=4.20,<5
 redis==5.3.1
 SQLAlchemy>=2.0,<2.1
+alembic==1.20.0
 PyMySQL>=1.1,<2
 
 # FastAPI和相关依赖

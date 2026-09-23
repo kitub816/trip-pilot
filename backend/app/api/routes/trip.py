@@ -5,13 +5,14 @@ from fastapi import APIRouter, Header
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from ...agents.trip_planner_agent import get_trip_planner_agent
-from ...config import validate_config
+from ...config import get_settings, validate_config
 from ...errors import (
     AppError,
     CheckpointUnavailable,
     PersistenceUnavailable,
     PlanNotResumable,
     PlanValidationError,
+    WorkflowVersionUnsupported,
 )
 from ...models.schemas import (
     StoredTripPlanResponse,
@@ -20,13 +21,15 @@ from ...models.schemas import (
     TripRequest,
 )
 from ...services.budget_service import get_budget_engine
-from ...services.checkpoint_service import (
-    get_checkpoint_path,
-    plan_execution,
-    sqlite_checkpointer,
-)
+from ...services.checkpoint_service import get_checkpoint_path, sqlite_checkpointer
 from ...services.constraint_service import build_travel_constraints
-from ...services.persistence_service import PlanStore, StoredTripPlan, get_plan_store
+from ...services.ownership_service import authorize_owner, require_owner_hash
+from ...services.persistence_service import (
+    CURRENT_WORKFLOW_VERSION,
+    PlanStore,
+    StoredTripPlan,
+    get_plan_store,
+)
 from ...services.rag_service import retrieve_plan_evidence
 from ...services.route_service import get_route_optimizer
 from ...services.validation_service import get_plan_validator
@@ -35,6 +38,10 @@ from ...workflows.trip_workflow import TripPlanningWorkflow
 from ...services.extraction_service import ConstraintExtractor, ExtractionPreview, ExtractionRequest
 
 router = APIRouter(prefix="/trip", tags=["旅行规划"])
+OwnerHeader = Annotated[
+    str | None,
+    Header(alias="X-Trip-Owner-Token", pattern=r"^[0-9a-f]{64}$"),
+]
 
 
 def get_trip_workflow() -> TripPlanningWorkflow:
@@ -70,6 +77,16 @@ def _required_store() -> PlanStore:
     return store
 
 
+def _authorized_record(
+    store: PlanStore,
+    plan_id: str,
+    owner_token: str | None,
+) -> StoredTripPlan:
+    record = store.get(plan_id)
+    authorize_owner(getattr(record, "owner_token_hash", None), owner_token)
+    return record
+
+
 def _run_durable(
     store: PlanStore,
     record: StoredTripPlan,
@@ -79,10 +96,14 @@ def _run_durable(
     path = get_checkpoint_path()
     if path is None:
         raise CheckpointUnavailable()
+    if record.workflow_version != CURRENT_WORKFLOW_VERSION:
+        raise WorkflowVersionUnsupported()
     constraints = build_travel_constraints(record.request)
-    # The guard is outside the terminal-error handler: an overlapping request must
-    # leave the durable business record in "planning" so it can be checked later.
-    with plan_execution(record.plan_id):
+    settings = get_settings()
+    with store.execution_lease(
+        record.plan_id,
+        settings.execution_lease_seconds,
+    ) as lease:
         try:
             with sqlite_checkpointer(path) as saver:
                 workflow = build_durable_workflow(saver)
@@ -90,6 +111,7 @@ def _run_durable(
                     plan = workflow.resume(record.plan_id)
                 else:
                     plan = workflow.plan(constraints, record.plan_id)
+            lease.ensure_owned()
         except AppError as error:
             store.fail(record.plan_id, error.code, record.version)
             raise
@@ -105,15 +127,19 @@ def plan_trip(
         str | None,
         Header(alias="X-Trip-Plan-ID", pattern=r"^[0-9a-f]{32}$"),
     ] = None,
+    owner_token: OwnerHeader = None,
 ):
     constraints = build_travel_constraints(request)
     store = get_plan_store()
-    record = (
-        store.start(request, recovery_id)
-        if store is not None and recovery_id is not None
-        else store.start(request) if store is not None
-        else None
-    )
+    owner_hash = require_owner_hash(owner_token) if store is not None else None
+    if store is None:
+        record = None
+    elif recovery_id is not None:
+        record = store.start(request, recovery_id, owner_hash)
+    elif owner_hash is not None:
+        record = store.start(request, owner_token_hash=owner_hash)
+    else:
+        record = store.start(request)
     if record is not None and get_checkpoint_path() is not None:
         record = _run_durable(store, record, resume=False)
         plan = record.plan
@@ -140,8 +166,12 @@ def plan_trip(
 
 
 @router.get("/plans/{plan_id}", response_model=StoredTripPlanResponse, summary="读取旅行计划")
-def get_plan(plan_id: str):
-    return _response(_required_store().get(plan_id), "旅行计划读取成功")
+def get_plan(plan_id: str, owner_token: OwnerHeader = None):
+    store = _required_store()
+    return _response(
+        _authorized_record(store, plan_id, owner_token),
+        "旅行计划读取成功",
+    )
 
 
 @router.post(
@@ -149,9 +179,9 @@ def get_plan(plan_id: str):
     response_model=StoredTripPlanResponse,
     summary="继续未完成的旅行规划",
 )
-def resume_plan(plan_id: str):
+def resume_plan(plan_id: str, owner_token: OwnerHeader = None):
     store = _required_store()
-    record = store.get(plan_id)
+    record = _authorized_record(store, plan_id, owner_token)
     if record.status == "completed":
         return _response(record, "旅行计划已完成")
     if record.status != "planning":
@@ -161,9 +191,13 @@ def resume_plan(plan_id: str):
 
 
 @router.put("/plans/{plan_id}", response_model=StoredTripPlanResponse, summary="更新旅行计划")
-def update_plan(plan_id: str, request: TripPlanUpdateRequest):
+def update_plan(
+    plan_id: str,
+    request: TripPlanUpdateRequest,
+    owner_token: OwnerHeader = None,
+):
     store = _required_store()
-    current = store.get(plan_id)
+    current = _authorized_record(store, plan_id, owner_token)
     constraints = build_travel_constraints(current.request)
     plan = get_route_optimizer().apply(request.data, constraints)
     plan = get_budget_engine().apply(plan, constraints)

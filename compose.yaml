@@ -9,6 +9,9 @@ services:
       REDIS_URL: redis://redis:6379/0
       DATABASE_URL: mysql+pymysql://trippilot:${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}@mysql:3306/trippilot
       CHECKPOINT_PATH: /app/state/workflow.sqlite
+      REQUIRE_PLAN_OWNER_TOKEN: "true"
+      EXECUTION_LEASE_SECONDS: "900"
+      CHECKPOINT_RETENTION_DAYS: "30"
     volumes:
       - checkpoint_data:/app/state
     depends_on:

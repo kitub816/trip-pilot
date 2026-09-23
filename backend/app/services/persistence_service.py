@@ -1,21 +1,38 @@
 """Durable request and plan records; separate from LangGraph checkpoints."""
 
+from contextlib import contextmanager
 import logging
-from datetime import datetime, timezone
-from threading import Lock
+from datetime import datetime, timedelta, timezone
+from threading import Event, Lock, Thread
 from typing import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, ValidationError
-from sqlalchemy import DateTime, Integer, String, Text, create_engine, select, update
+from sqlalchemy import (
+    DateTime,
+    Integer,
+    String,
+    Text,
+    create_engine,
+    delete,
+    or_,
+    select,
+    update,
+)
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from ..config import get_settings
-from ..errors import PersistenceUnavailable, PlanNotFound, PlanVersionConflict
+from ..errors import (
+    PersistenceUnavailable,
+    PlanNotFound,
+    PlanVersionConflict,
+    ServiceBusy,
+)
 from ..models.schemas import TripPlan, TripRequest
 
 logger = logging.getLogger("trippilot.persistence")
+CURRENT_WORKFLOW_VERSION = 1
 
 
 def _utc_now() -> datetime:
@@ -36,8 +53,16 @@ class TripPlanRow(Base):
     request_json: Mapped[str] = mapped_column(Text, nullable=False)
     plan_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    owner_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    workflow_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=CURRENT_WORKFLOW_VERSION,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
 
 
 class StoredTripPlan(BaseModel):
@@ -49,16 +74,64 @@ class StoredTripPlan(BaseModel):
     request: TripRequest
     plan: TripPlan | None
     error_code: str | None
+    owner_token_hash: str | None
+    lease_owner: str | None
+    lease_expires_at: datetime | None
+    workflow_version: int
     created_at: datetime
     updated_at: datetime
 
 
+class LeaseGuard:
+    def __init__(
+        self,
+        store: "PlanStore",
+        plan_id: str,
+        holder_id: str,
+        ttl_seconds: int,
+    ) -> None:
+        self._store = store
+        self._plan_id = plan_id
+        self._holder_id = holder_id
+        self._ttl_seconds = ttl_seconds
+        self._stopped = Event()
+        self._lost = Event()
+        self._thread = Thread(target=self._renew_loop, daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def _renew_loop(self) -> None:
+        interval = max(5, self._ttl_seconds // 3)
+        while not self._stopped.wait(interval):
+            try:
+                if not self._store.renew_lease(
+                    self._plan_id,
+                    self._holder_id,
+                    self._ttl_seconds,
+                ):
+                    self._lost.set()
+                    return
+            except PersistenceUnavailable:
+                self._lost.set()
+                return
+
+    def ensure_owned(self) -> None:
+        if self._lost.is_set():
+            raise ServiceBusy()
+
+    def stop(self) -> None:
+        self._stopped.set()
+        self._thread.join(timeout=2)
+
+
 class PlanStore:
-    """Transactional plan records with optimistic version checks."""
+    """Transactional plan records, optimistic versions and execution leases."""
 
     def __init__(self, database_url: str):
         if not database_url.strip():
             raise ValueError("database_url is required")
+        self._database_url = database_url
         options = {"pool_pre_ping": True}
         if database_url.startswith("sqlite"):
             options["connect_args"] = {"check_same_thread": False}
@@ -67,12 +140,19 @@ class PlanStore:
 
     def initialize(self) -> None:
         try:
-            Base.metadata.create_all(self._engine)
-        except SQLAlchemyError as exc:
+            from .migration_service import upgrade_database
+
+            upgrade_database(self._database_url)
+        except Exception as exc:
             logger.error("persistence.initialize_failed")
             raise PersistenceUnavailable() from exc
 
-    def start(self, request: TripRequest, plan_id: str | None = None) -> StoredTripPlan:
+    def start(
+        self,
+        request: TripRequest,
+        plan_id: str | None = None,
+        owner_token_hash: str | None = None,
+    ) -> StoredTripPlan:
         now = _utc_now()
         row = TripPlanRow(
             id=plan_id or uuid4().hex,
@@ -81,6 +161,10 @@ class PlanStore:
             request_json=request.model_dump_json(),
             plan_json=None,
             error_code=None,
+            owner_token_hash=owner_token_hash,
+            lease_owner=None,
+            lease_expires_at=None,
+            workflow_version=CURRENT_WORKFLOW_VERSION,
             created_at=now,
             updated_at=now,
         )
@@ -132,6 +216,113 @@ class PlanStore:
             logger.error("persistence.read_failed")
             raise PersistenceUnavailable() from exc
 
+    def acquire_lease(self, plan_id: str, holder_id: str, ttl_seconds: int) -> bool:
+        now = _utc_now()
+        expires_at = now + timedelta(seconds=ttl_seconds)
+        try:
+            with self._sessions.begin() as session:
+                result = session.execute(
+                    update(TripPlanRow)
+                    .where(
+                        TripPlanRow.id == plan_id,
+                        TripPlanRow.status == "planning",
+                        or_(
+                            TripPlanRow.lease_owner.is_(None),
+                            TripPlanRow.lease_expires_at.is_(None),
+                            TripPlanRow.lease_expires_at <= now,
+                            TripPlanRow.lease_owner == holder_id,
+                        ),
+                    )
+                    .values(lease_owner=holder_id, lease_expires_at=expires_at)
+                )
+                return result.rowcount == 1
+        except SQLAlchemyError as exc:
+            logger.error("persistence.lease_acquire_failed")
+            raise PersistenceUnavailable() from exc
+
+    def renew_lease(self, plan_id: str, holder_id: str, ttl_seconds: int) -> bool:
+        try:
+            with self._sessions.begin() as session:
+                result = session.execute(
+                    update(TripPlanRow)
+                    .where(
+                        TripPlanRow.id == plan_id,
+                        TripPlanRow.status == "planning",
+                        TripPlanRow.lease_owner == holder_id,
+                    )
+                    .values(
+                        lease_expires_at=_utc_now() + timedelta(seconds=ttl_seconds)
+                    )
+                )
+                return result.rowcount == 1
+        except SQLAlchemyError as exc:
+            logger.error("persistence.lease_renew_failed")
+            raise PersistenceUnavailable() from exc
+
+    def release_lease(self, plan_id: str, holder_id: str) -> None:
+        try:
+            with self._sessions.begin() as session:
+                session.execute(
+                    update(TripPlanRow)
+                    .where(
+                        TripPlanRow.id == plan_id,
+                        TripPlanRow.lease_owner == holder_id,
+                    )
+                    .values(lease_owner=None, lease_expires_at=None)
+                )
+        except SQLAlchemyError as exc:
+            logger.error("persistence.lease_release_failed")
+            raise PersistenceUnavailable() from exc
+
+    @contextmanager
+    def execution_lease(self, plan_id: str, ttl_seconds: int):
+        holder_id = uuid4().hex
+        if not self.acquire_lease(plan_id, holder_id, ttl_seconds):
+            raise ServiceBusy()
+        guard = LeaseGuard(self, plan_id, holder_id, ttl_seconds)
+        guard.start()
+        try:
+            yield guard
+        finally:
+            guard.stop()
+            self.release_lease(plan_id, holder_id)
+
+    def terminal_before(self, cutoff: datetime, limit: int = 1000) -> list[str]:
+        now = _utc_now()
+        try:
+            with self._sessions() as session:
+                return list(session.scalars(
+                    select(TripPlanRow.id)
+                    .where(
+                        TripPlanRow.status.in_(("completed", "failed")),
+                        TripPlanRow.updated_at < cutoff,
+                        or_(
+                            TripPlanRow.lease_owner.is_(None),
+                            TripPlanRow.lease_expires_at <= now,
+                        ),
+                    )
+                    .order_by(TripPlanRow.updated_at)
+                    .limit(limit)
+                ))
+        except SQLAlchemyError as exc:
+            logger.error("persistence.cleanup_list_failed")
+            raise PersistenceUnavailable() from exc
+
+    def delete_terminal(self, plan_id: str, cutoff: datetime) -> bool:
+        try:
+            with self._sessions.begin() as session:
+                result = session.execute(
+                    delete(TripPlanRow).where(
+                        TripPlanRow.id == plan_id,
+                        TripPlanRow.status.in_(("completed", "failed")),
+                        TripPlanRow.updated_at < cutoff,
+                    )
+                )
+                return result.rowcount == 1
+        except SQLAlchemyError as exc:
+            logger.error("persistence.cleanup_delete_failed")
+            raise PersistenceUnavailable() from exc
+
     def _transition(
         self,
         plan_id: str,
@@ -180,6 +371,10 @@ class PlanStore:
             request=TripRequest.model_validate_json(row.request_json),
             plan=TripPlan.model_validate_json(row.plan_json) if row.plan_json else None,
             error_code=row.error_code,
+            owner_token_hash=row.owner_token_hash,
+            lease_owner=row.lease_owner,
+            lease_expires_at=row.lease_expires_at,
+            workflow_version=row.workflow_version,
             created_at=row.created_at,
             updated_at=row.updated_at,
         )

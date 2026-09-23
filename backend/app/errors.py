@@ -100,6 +100,18 @@ class PlanNotResumable(AppError):
     message = "该旅行计划当前无法继续，请重新发起规划"
 
 
+class PlanAccessDenied(AppError):
+    status_code = 403
+    code = "PLAN_ACCESS_DENIED"
+    message = "无权访问该旅行计划"
+
+
+class WorkflowVersionUnsupported(AppError):
+    status_code = 409
+    code = "WORKFLOW_VERSION_UNSUPPORTED"
+    message = "工作流版本不兼容，请重新发起规划"
+
+
 def upstream_failure(exc: BaseException) -> UpstreamError | UpstreamTimeout:
     """SDK wrappers preserve cause/context; classify without reading error text."""
     from httpx import TimeoutException

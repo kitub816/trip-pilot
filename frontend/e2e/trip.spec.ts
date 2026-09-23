@@ -49,6 +49,7 @@ test('create shows returned plan and retrieves persisted version', async ({ page
   await page.route('**/api/trip/plan', async route => {
     expect(route.request().postDataJSON()).toMatchObject({ city: '北京', travel_days: 1 })
     expect(route.request().headers()['x-trip-plan-id']).toMatch(/^[0-9a-f]{32}$/)
+    expect(route.request().headers()['x-trip-owner-token']).toMatch(/^[0-9a-f]{64}$/)
     await route.fulfill({ json: { success: true, data: plan, plan_id: 'fixture', version: 1 } })
   })
   await page.route('**/api/trip/plans/fixture', route => route.fulfill({ json: { data: plan, version: 2 } }))
@@ -163,7 +164,11 @@ test('official sources and reservation uncertainty are visible', async ({ page }
 test('reload resumes a pending checkpoint and opens the completed plan', async ({ page }) => {
   const recoveryId = 'd'.repeat(32)
   await page.addInitScript(id => localStorage.setItem('pendingTripPlanId', id), recoveryId)
-  await page.route('**/api/trip/plans/' + recoveryId, route => route.fulfill({
+  let observedOwner = ''
+  await page.route('**/api/trip/plans/' + recoveryId, route => {
+    observedOwner = route.request().headers()['x-trip-owner-token']
+    expect(observedOwner).toMatch(/^[0-9a-f]{64}$/)
+    return route.fulfill({
     json: {
       success: true,
       message: '旅行计划读取成功',
@@ -183,8 +188,11 @@ test('reload resumes a pending checkpoint and opens the completed plan', async (
       created_at: '2026-10-01T00:00:00',
       updated_at: '2026-10-01T00:00:00'
     }
-  }))
-  await page.route('**/api/trip/plans/' + recoveryId + '/resume', route => route.fulfill({
+    })
+  })
+  await page.route('**/api/trip/plans/' + recoveryId + '/resume', route => {
+    expect(route.request().headers()['x-trip-owner-token']).toBe(observedOwner)
+    return route.fulfill({
     json: {
       success: true,
       message: '旅行计划恢复完成',
@@ -204,7 +212,8 @@ test('reload resumes a pending checkpoint and opens the completed plan', async (
       created_at: '2026-10-01T00:00:00',
       updated_at: '2026-10-01T00:01:00'
     }
-  }))
+    })
+  })
 
   await page.goto('/')
   await expect(page.getByText('发现未完成的旅行规划')).toBeVisible()

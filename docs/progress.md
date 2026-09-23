@@ -1,10 +1,10 @@
 # TripPilot 进度
 
-更新时间：2026-09-22。事实来源：当前代码、本文件、根目录 `docs-project_spec.md`。
+更新时间：2026-09-23。事实来源：当前代码、本文件、根目录 `docs-project_spec.md`。
 
 ## 当前阶段
 
-Phase 0–27 的阶段代码与记录已落地；关键规格缺口列于下方，不能视为线上验收完成。用户已明确授权连续优化；各阶段独立测试、提交与归档。
+Phase 0–29 的阶段代码与记录已落地；关键规格缺口列于下方，不能视为线上验收完成。各阶段独立测试、提交与归档。
 
 ## 当前架构
 
@@ -14,7 +14,7 @@ Phase 0–27 的阶段代码与记录已落地；关键规格缺口列于下方�
 - 工具：本地 Pydantic 参数白名单 + 发现的工具 schema；每次尝试独立会话；默认 20 秒单次/50 秒总截止时间、最多 2 次尝试、每进程 3 个并发槽。只重试明确超时或结构化限流。
 - 检索：最多 3 个并发任务，单任务含排队 60 秒截止时间，覆盖偏好和必去，POI 按 ID 去重，每个搜索最多补查 6 个详情。无有效景点明确终止。
 - 缓存：只保存已验证的 POI、天气、geocode、路线类型结果；键含协议版本、操作和规范化参数哈希。POI/geocode 24 小时、路线 30 分钟、天气 10 分钟；Redis 不可用或值损坏时回源。
-- 持久化：可选 MySQL 保存请求、`planning/completed/failed` 状态、计划 JSON 和乐观锁版本；提供 GET/PUT，数据库关闭时旧 POST 保持兼容。
+- 持久化：可选 MySQL 保存请求、`planning/completed/failed` 状态、计划 JSON、乐观锁版本、所有权摘要、数据库执行租约和工作流版本；Alembic 管理表结构。SQLite checkpoint 与业务表用 plan ID 关联。
 - 预算：门票、餐饮和交通按人数计算，酒店按两人一间及 `天数-1` 夜计算；0 与未知 null 分离，输出 unknown_items、完整性和预算上限三态。
 - 路线：每天最多 6 点构建有向矩阵，日内最多 3 个并发调用，单段 60 秒、每日矩阵 90 秒截止；固定首点的最近邻排序可复现，显式输出不可达、分段超时、步行超限和矩阵截断。
 - Planner：私有 `PlannerDraft` 禁止额外字段，景点/酒店只引用 `A001/H001` 作用域 ID；城市、日期、天气及 POI 身份由服务端水合。非法格式、未知 ID 和日期错位最多修复一次，仍失败则明确终止。
@@ -97,7 +97,7 @@ JSON 日志补充请求耗时、状态码、稳定错误码和工作流节点名
 
 ## 实际验证
 
-`backend: python -m pytest tests -q`：**205 passed，2 skipped，1 warning**（项目 .venv 稳定 LangGraph）。
+`backend: python -m pytest`：**212 passed，2 skipped，1 warning**（项目 .venv 稳定 LangGraph）。
 
 真实 MySQL 8.4 一次性容器验证：`tests/test_phase7_persistence.py` **7 passed，10 warnings**；容器已删除。真实 Redis 阶段验证仍见 Phase 6 记录。
 `git diff --check`：通过。
@@ -112,8 +112,8 @@ JSON 日志补充请求耗时、状态码、稳定错误码和工作流节点名
 - 截止时间触发后仍需执行 SDK 的进程清理，实际返回可多出清理时间。当前 HTTP 同步路由不会在客户端断开时自动取消；原生检索协程本身已支持取消。
 - Planner LLM 仍是同步 HelloAgents 调用，共享实例拒绝重叠规划；已有调用/Prompt 上限和 token 估算，但 SDK 没有可靠 provider usage，尚无真实成本、fallback 或流式策略。
 - ToolResult 提供工具名、抓取时间、尝试次数和耗时；候选级引用和跨节点指标尚未接入。
-- Redis 已作为可选检索缓存接入；MySQL 已提供可选计划记录，前端已接入服务端 GET/PUT。官方语料仅覆盖故宫有限日期，已有本地 SQLite checkpoint/CLI 恢复，仍缺网页恢复和大样本线上评测；Phase 20 只完成小样本真实初测。
-- MySQL 当前使用 `create_all`，没有 Alembic、鉴权、所有权或中断工作流恢复；`planning` 只用于识别未完成请求。
+- Redis 已作为可选检索缓存接入；MySQL 计划记录与 SQLite checkpoint 已贯通网页恢复。官方语料仅覆盖故宫有限日期，仍缺大样本线上评测；Phase 20/21 只有小样本真实初测与单例复测。
+- MySQL 已使用 Alembic，计划 API 由浏览器 capability token 保护，并用数据库租约协调恢复；这不是完整账号鉴权，SQLite checkpoint 也不是多节点共享存储。
 - 预算单价尚无可靠证据；房间容量固定为 2，交通成本仍缺少可靠供应商报价；前端已展示未知费用状态。
 - 路线使用固定首点的最近邻启发式，不保证全局最优；混合交通暂映射公共交通，尚无逐段多模式比较、路线几何或固定中间点；已有计划到访时刻会保序。
 - 路线只标记失败和超限，尚未触发重新选点；整个规划请求也没有统一总截止时间。
@@ -124,7 +124,7 @@ JSON 日志补充请求耗时、状态码、稳定错误码和工作流节点名
 
 ## 下一阶段
 
-后续优先网页恢复与全栈联调；继续扩大官方语料与真实全栈案例，补实际预约时段校验和 CI 远端执行。北京公交单例复测已通过，见 Phase 21。
+后续优先扩大官方景区语料和真实高德/LLM 固定案例；公网部署前补账号鉴权和网络 checkpoint store。实际预约完成、节假日例外、真实浏览器供应商 E2E 与远端部署验收仍未完成。
 
 ## Phase 16 修改
 
@@ -185,3 +185,8 @@ Docker Nginx 配置补验通过；已推送 `codex/verify-trip-pilot`。GitHub A
 ## Phase 28 修改
 
 浏览器现在会在规划前保存随机恢复 ID；MySQL 业务记录与 SQLite LangGraph checkpoint 用同一 ID 关联。新增 HTTP 恢复端点和首页 pending 状态检查，模拟路线节点中断后恢复时不会重复已完成的 planner 节点。Compose 增加独立 checkpoint 数据卷。后端 207 passed、2 skipped、1 warning；浏览器 10 passed；前端构建和更新后的前后端镜像构建通过；占位配置 Compose 首页/API 返回 200，checkpoint 卷可写。未调用真实供应商。详见 [phase28.md](phase28.md)。
+## Phase 29 修改
+
+Alembic 取代 create_all，并兼容升级旧 trip_plans 表。计划 API 增加只存摘要的 256 bit capability token；Compose 默认强制所有权。进程内互斥升级为带心跳和过期接管的数据库租约，记录增加 workflow_version；新增只清理过期终态记录及对应 checkpoint 的 dry-run/执行命令。后端 **212 passed、2 skipped、1 warning**；浏览器 **10 passed**；前端和镜像构建通过。隔离 MySQL 8.4 实际迁移到 0001_plan_ownership，容器 API 所有权验证为 403/403/200。没有调用真实供应商。详见 [phase29.md](phase29.md)。
+
+当前最重要的外部依赖缺口是扩大真实官方语料、验证票务/预约事实，并用真实高德与 LLM 做可重复的全链路案例。当前 capability token 适合个人应用，不等同于公网账号系统；供应商副作用仍不保证 exactly-once。

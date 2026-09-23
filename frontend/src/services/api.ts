@@ -8,6 +8,22 @@ import type {
 } from '@/types'
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin
+export const PLAN_OWNER_KEY = 'tripPlanOwnerToken'
+
+export function getOrCreatePlanOwnerToken(): string {
+  const existing = localStorage.getItem(PLAN_OWNER_KEY)
+  if (existing && /^[0-9a-f]{64}$/.test(existing)) return existing
+  const created = Array.from(
+    crypto.getRandomValues(new Uint8Array(32)),
+    value => value.toString(16).padStart(2, '0')
+  ).join('')
+  localStorage.setItem(PLAN_OWNER_KEY, created)
+  return created
+}
+
+function ownerHeaders(): Record<string, string> {
+  return { 'X-Trip-Owner-Token': getOrCreatePlanOwnerToken() }
+}
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -31,7 +47,10 @@ export async function generateTripPlan(
     const response = await apiClient.post<TripPlanResponse>('/api/trip/plan', formData, {
       signal,
       timeout: 600000,
-      headers: recoveryId ? { 'X-Trip-Plan-ID': recoveryId } : undefined
+      headers: {
+        ...ownerHeaders(),
+        ...(recoveryId ? { 'X-Trip-Plan-ID': recoveryId } : {})
+      }
     })
     return response.data
   } catch (error) {
@@ -51,7 +70,8 @@ export async function generateTripPlan(
 export async function getStoredTripPlan(planId: string): Promise<StoredTripPlanResponse> {
   try {
     const response = await apiClient.get<StoredTripPlanResponse>(
-      `/api/trip/plans/${encodeURIComponent(planId)}`
+      `/api/trip/plans/${encodeURIComponent(planId)}`,
+      { headers: ownerHeaders() }
     )
     return response.data
   } catch (error) {
@@ -73,7 +93,7 @@ export async function resumeTripPlan(planId: string): Promise<StoredTripPlanResp
     const response = await apiClient.post<StoredTripPlanResponse>(
       `/api/trip/plans/${encodeURIComponent(planId)}/resume`,
       undefined,
-      { timeout: 600000 }
+      { timeout: 600000, headers: ownerHeaders() }
     )
     return response.data
   } catch (error) {
@@ -90,7 +110,7 @@ export async function updateTripPlan(planId: string, expectedVersion: number, da
     const response = await apiClient.put(`/api/trip/plans/${encodeURIComponent(planId)}`, {
       expected_version: expectedVersion,
       data
-    })
+    }, { headers: ownerHeaders() })
     if (!response.data.data) throw new Error('更新后的计划不可用')
     return { data: response.data.data, version: response.data.version }
   } catch (error) {

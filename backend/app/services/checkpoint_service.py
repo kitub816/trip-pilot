@@ -1,42 +1,22 @@
 """Local durable LangGraph state. No credentials, pickle or arbitrary imports."""
 from contextlib import contextmanager
 from dataclasses import is_dataclass
-import sqlite3
 from pathlib import Path
-from threading import Lock
+import sqlite3
 
-from pydantic import BaseModel
-from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from langgraph.checkpoint.sqlite import SqliteSaver
+from pydantic import BaseModel
 
 from .. import errors
-from ..models import schemas, knowledge, validation
-from . import constraint_service, retrieval_service
 from ..config import get_settings
-from ..errors import ServiceBusy
-
-
-_active_plan_ids: set[str] = set()
-_active_plan_lock = Lock()
+from ..models import knowledge, schemas, validation
+from . import constraint_service, retrieval_service
 
 
 def get_checkpoint_path() -> Path | None:
     raw = get_settings().checkpoint_path.strip()
     return Path(raw).expanduser().resolve() if raw else None
-
-
-@contextmanager
-def plan_execution(plan_id: str):
-    """Prevent two local workers from advancing the same graph thread at once."""
-    with _active_plan_lock:
-        if plan_id in _active_plan_ids:
-            raise ServiceBusy()
-        _active_plan_ids.add(plan_id)
-    try:
-        yield
-    finally:
-        with _active_plan_lock:
-            _active_plan_ids.discard(plan_id)
 
 
 class CheckpointSerializer:
@@ -47,14 +27,20 @@ class CheckpointSerializer:
             for value in vars(module).values():
                 if isinstance(value, type) and value.__module__ == module.__name__:
                     if issubclass(value, BaseModel) or is_dataclass(value) or value in (
-                        schemas.TransportationMode, schemas.AccommodationType
+                        schemas.TransportationMode,
+                        schemas.AccommodationType,
                     ):
                         allowed.append((value.__module__, value.__name__))
-        self.inner = JsonPlusSerializer(pickle_fallback=False,
-                                       allowed_msgpack_modules=allowed,
-                                       allowed_json_modules=[])
-        self.error_types = {value.code: value for value in vars(errors).values()
-                            if isinstance(value, type) and issubclass(value, errors.AppError)}
+        self.inner = JsonPlusSerializer(
+            pickle_fallback=False,
+            allowed_msgpack_modules=allowed,
+            allowed_json_modules=[],
+        )
+        self.error_types = {
+            value.code: value
+            for value in vars(errors).values()
+            if isinstance(value, type) and issubclass(value, errors.AppError)
+        }
 
     def _encode(self, value):
         if isinstance(value, errors.AppError):
@@ -87,8 +73,14 @@ class CheckpointSerializer:
 @contextmanager
 def sqlite_checkpointer(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(str(path), check_same_thread=False)
+    connection = sqlite3.connect(str(path), timeout=30, check_same_thread=False)
+    connection.execute("PRAGMA busy_timeout = 30000")
     try:
         yield SqliteSaver(connection, serde=CheckpointSerializer())
     finally:
         connection.close()
+
+
+def delete_checkpoint_thread(path: Path, thread_id: str) -> None:
+    with sqlite_checkpointer(path) as saver:
+        saver.delete_thread(thread_id)

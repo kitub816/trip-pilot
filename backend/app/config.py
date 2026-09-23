@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     redis_timeout: float = Field(default=0.3, gt=0, le=3)
     database_url: SecretStr = SecretStr("")
     checkpoint_path: str = ""
+    require_plan_owner_token: bool = False
+    execution_lease_seconds: int = Field(default=900, ge=60, le=3600)
+    checkpoint_retention_days: int = Field(default=30, ge=1, le=3650)
     route_max_points: int = Field(default=6, ge=2, le=10)
     route_concurrency: int = Field(default=3, ge=1, le=8)
     route_leg_timeout: float = Field(default=60, gt=0, le=180)
