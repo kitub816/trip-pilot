@@ -70,3 +70,7 @@
 ## 2026-09-22 当前验证
 
 阶段 22–27 已补浏览器回归、前端依赖审计、提取预览、故宫有限官方证据、SQLite 本地 checkpoint 与长请求等待修复。项目 .venv 后端 205 passed、2 skipped、1 warning；浏览器 9 passed；build 通过。远端 CI 无 remote，等待用户目标仓库与推送授权；不能声称原始规格全部完成。
+
+## Phase 28 HTTP/网页恢复（已完成，单机边界）
+
+浏览器在请求前保存随机恢复 ID；MySQL 业务记录与 SQLite LangGraph checkpoint 用同一 ID 关联。新增状态检查与 resume API，真实 SQLite 测试证明路线节点中断后不会重复已完成 planner 节点；首页刷新恢复有 Playwright 覆盖。Compose 使用独立 checkpoint 卷。当前只提供进程内互斥且没有用户所有权；多实例租约、鉴权、清理迁移仍未完成。详见 [phase28.md](phase28.md)。

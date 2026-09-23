@@ -64,3 +64,7 @@ Phase 19 到访时间窗已落地；Phase 20 完成真实高德/LLM 固定案例
 ## 2026-09-22 当前验证
 
 阶段 22–27 已补浏览器回归、前端依赖审计、提取预览、故宫有限官方证据、SQLite 本地 checkpoint 与长请求等待修复。项目 .venv 后端 205 passed、2 skipped、1 warning；浏览器 9 passed；build 通过。远端 CI 无 remote，等待用户目标仓库与推送授权；不能声称原始规格全部完成。
+
+## 2026-09-23：Phase 28 更新
+
+GitHub 远端 CI 已在 codex/verify-trip-pilot 分支验证 backend/frontend 作业成功。Phase 28 已把 SQLite LangGraph checkpoint 接入同步 HTTP 与首页恢复：浏览器请求前保存随机 plan ID，MySQL 业务记录与 checkpoint 以同一 ID 关联，新增 POST /api/trip/plans/{plan_id}/resume，并用进程内互斥避免同一图线程重复推进。后端 207 passed、2 skipped、1 warning；浏览器 10 passed；前端与两镜像构建通过；占位配置 Compose 首页/API 200 且 checkpoint 卷可写。恢复 ID 尚未绑定用户，互斥不覆盖多实例，真实供应商全链路没有在本阶段重测。详见 [phase28.md](phase28.md)。

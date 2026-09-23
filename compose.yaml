@@ -8,6 +8,9 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
       REDIS_URL: redis://redis:6379/0
       DATABASE_URL: mysql+pymysql://trippilot:${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}@mysql:3306/trippilot
+      CHECKPOINT_PATH: /app/state/workflow.sqlite
+    volumes:
+      - checkpoint_data:/app/state
     depends_on:
       redis:
         condition: service_healthy
@@ -48,3 +51,4 @@ services:
     restart: unless-stopped
 volumes:
   mysql_data:
+  checkpoint_data:

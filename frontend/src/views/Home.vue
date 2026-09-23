@@ -17,6 +17,14 @@
     </div>
 
     <a-card class="form-card" :bordered="false">
+      <a-card v-if="recoveryPlanId" title="发现未完成的旅行规划" size="small" class="recovery-card">
+        <p>{{ recoveryStatus || '正在检查服务端状态...' }}</p>
+        <a-space>
+          <a-button :loading="checkingRecovery" @click="checkRecovery">检查状态</a-button>
+          <a-button type="primary" :loading="recovering" :disabled="!recoveryCanResume" @click="resumeRecovery">继续规划</a-button>
+          <a-button @click="dismissRecovery">忽略记录</a-button>
+        </a-space>
+      </a-card>
       <a-form
         :model="formData"
         layout="vertical"
@@ -226,11 +234,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, computed, onUnmounted } from 'vue'
+import { ref, reactive, watch, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { generateTripPlan, extractConstraints } from '@/services/api'
-import type { TripFormData, ExtractionPreview } from '@/types'
+import {
+  PlanningRequestError,
+  extractConstraints,
+  generateTripPlan,
+  getStoredTripPlan,
+  resumeTripPlan
+} from '@/services/api'
+import type { TripFormData, TripPlan, ExtractionPreview } from '@/types'
 import type { Dayjs } from 'dayjs'
 
 const router = useRouter()
@@ -240,6 +254,12 @@ const loadingStatus = ref('')
 const mustVisitText = ref('')
 const avoidPlacesText = ref('')
 let requestController: AbortController | null = null
+const recoveryPlanId = ref<string | null>(null)
+const recoveryStatus = ref('')
+const recoveryCanResume = ref(false)
+const checkingRecovery = ref(false)
+const recovering = ref(false)
+const PENDING_PLAN_KEY = 'pendingTripPlanId'
 onUnmounted(() => requestController?.abort())
 
 type TripFormState = Omit<TripFormData, 'start_date' | 'end_date'> & {
@@ -290,6 +310,75 @@ const applyExtraction = () => {
   message.success('约束已填入，请核对后开始规划')
 }
 
+const clearRecovery = () => {
+  localStorage.removeItem(PENDING_PLAN_KEY)
+  recoveryPlanId.value = null
+  recoveryStatus.value = ''
+  recoveryCanResume.value = false
+}
+
+const storeCompletedPlan = (data: TripPlan, planId: string, version: number) => {
+  sessionStorage.setItem('tripPlan', JSON.stringify(data))
+  sessionStorage.setItem('tripPlanRef', JSON.stringify({ planId, version }))
+  clearRecovery()
+}
+
+const checkRecovery = async () => {
+  const planId = recoveryPlanId.value
+  if (!planId || checkingRecovery.value) return
+  checkingRecovery.value = true
+  recoveryCanResume.value = false
+  try {
+    const record = await getStoredTripPlan(planId)
+    if (record.status === 'completed' && record.data) {
+      storeCompletedPlan(record.data, record.plan_id, record.version)
+      message.success('已找回完成的旅行计划')
+      await router.push('/result')
+      return
+    }
+    if (record.status === 'failed') {
+      recoveryStatus.value = `上次规划已结束（${record.error_code || '未知错误'}），请忽略记录后重新规划。`
+      return
+    }
+    recoveryStatus.value = '服务端仍保留未完成状态；若原请求已结束，可继续执行剩余节点。'
+    recoveryCanResume.value = true
+  } catch (error) {
+    recoveryStatus.value = error instanceof Error ? error.message : '无法检查恢复状态'
+  } finally {
+    checkingRecovery.value = false
+  }
+}
+
+const resumeRecovery = async () => {
+  const planId = recoveryPlanId.value
+  if (!planId || recovering.value) return
+  recovering.value = true
+  try {
+    const record = await resumeTripPlan(planId)
+    if (!record.data) throw new Error('恢复完成但计划数据不可用')
+    storeCompletedPlan(record.data, record.plan_id, record.version)
+    message.success('旅行计划已恢复完成')
+    await router.push('/result')
+  } catch (error) {
+    recoveryStatus.value = error instanceof Error ? error.message : '恢复旅行计划失败'
+    message.error(recoveryStatus.value)
+    await checkRecovery()
+  } finally {
+    recovering.value = false
+  }
+}
+
+const dismissRecovery = () => clearRecovery()
+
+onMounted(() => {
+  const planId = localStorage.getItem(PENDING_PLAN_KEY)
+  if (planId && /^[0-9a-f]{32}$/.test(planId)) {
+    recoveryPlanId.value = planId
+    void checkRecovery()
+  } else if (planId) {
+    localStorage.removeItem(PENDING_PLAN_KEY)
+  }
+})
 // 监听日期变化,自动计算旅行天数
 watch([() => formData.start_date, () => formData.end_date], ([start, end]) => {
   if (start && end) {
@@ -306,6 +395,9 @@ watch([() => formData.start_date, () => formData.end_date], ([start, end]) => {
   }
 })
 
+const createRecoveryId = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, '0')).join('')
+
 const handleSubmit = async () => {
   if (!formData.start_date || !formData.end_date) {
     message.error('请选择日期')
@@ -315,9 +407,9 @@ const handleSubmit = async () => {
   loading.value = true
   loadingProgress.value = 0
   loadingStatus.value = '正在初始化...'
-
   requestController = new AbortController()
   loadingStatus.value = '正在规划，等待服务端结果...'
+  let submittedRecoveryId: string | null = null
 
   try {
     const requestData: TripFormData = {
@@ -333,39 +425,52 @@ const handleSubmit = async () => {
       travelers: formData.travelers,
       budget_limit: formData.budget_limit,
       currency: formData.budget_limit ? 'CNY' : undefined,
-      must_visit: mustVisitText.value.split(/[,，]/).map(v => v.trim()).filter(Boolean),
-      avoid_places: avoidPlacesText.value.split(/[,，]/).map(v => v.trim()).filter(Boolean),
+      must_visit: mustVisitText.value.split(/[,，]/).map(value => value.trim()).filter(Boolean),
+      avoid_places: avoidPlacesText.value.split(/[,，]/).map(value => value.trim()).filter(Boolean),
       max_daily_walking_km: formData.max_daily_walking_km,
       max_single_transport_minutes: formData.max_single_transport_minutes
     }
 
-    const response = await generateTripPlan(requestData, requestController.signal)
+    submittedRecoveryId = createRecoveryId()
+    localStorage.setItem(PENDING_PLAN_KEY, submittedRecoveryId)
+    recoveryPlanId.value = submittedRecoveryId
+    recoveryStatus.value = '规划请求已提交；刷新页面后仍可检查状态。'
+    recoveryCanResume.value = false
 
-
+    const response = await generateTripPlan(
+      requestData,
+      requestController.signal,
+      submittedRecoveryId
+    )
     loadingProgress.value = 100
     loadingStatus.value = '✅ 完成!'
 
     if (response.success && response.data) {
-      // 保存到sessionStorage
-      sessionStorage.setItem('tripPlan', JSON.stringify(response.data))
       if (response.plan_id && response.version) {
-        sessionStorage.setItem('tripPlanRef', JSON.stringify({ planId: response.plan_id, version: response.version }))
+        storeCompletedPlan(response.data, response.plan_id, response.version)
       } else {
+        sessionStorage.setItem('tripPlan', JSON.stringify(response.data))
         sessionStorage.removeItem('tripPlanRef')
+        clearRecovery()
       }
-
       message.success('旅行计划生成成功!')
-
-      // 短暂延迟后跳转
       setTimeout(() => {
-        router.push('/result')
+        void router.push('/result')
       }, 500)
     } else {
+      clearRecovery()
       message.error(response.message || '生成失败')
     }
-  } catch (error: any) {
-
-    message.error(error.message || '生成旅行计划失败,请稍后重试')
+  } catch (error) {
+    const recoverable = error instanceof PlanningRequestError && error.recoverable
+    if (recoverable && submittedRecoveryId) {
+      recoveryPlanId.value = submittedRecoveryId
+      recoveryStatus.value = '请求已中断；请先检查服务端状态，再决定是否继续规划。'
+      recoveryCanResume.value = false
+    } else {
+      clearRecovery()
+    }
+    message.error(error instanceof Error ? error.message : '生成旅行计划失败,请稍后重试')
   } finally {
     setTimeout(() => {
       loading.value = false

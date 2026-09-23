@@ -48,6 +48,7 @@ async function openStored(page: Page) {
 test('create shows returned plan and retrieves persisted version', async ({ page }) => {
   await page.route('**/api/trip/plan', async route => {
     expect(route.request().postDataJSON()).toMatchObject({ city: '北京', travel_days: 1 })
+    expect(route.request().headers()['x-trip-plan-id']).toMatch(/^[0-9a-f]{32}$/)
     await route.fulfill({ json: { success: true, data: plan, plan_id: 'fixture', version: 1 } })
   })
   await page.route('**/api/trip/plans/fixture', route => route.fulfill({ json: { data: plan, version: 2 } }))
@@ -157,6 +158,64 @@ test('official sources and reservation uncertainty are visible', async ({ page }
 })
 
 
+
+
+test('reload resumes a pending checkpoint and opens the completed plan', async ({ page }) => {
+  const recoveryId = 'd'.repeat(32)
+  await page.addInitScript(id => localStorage.setItem('pendingTripPlanId', id), recoveryId)
+  await page.route('**/api/trip/plans/' + recoveryId, route => route.fulfill({
+    json: {
+      success: true,
+      message: '旅行计划读取成功',
+      plan_id: recoveryId,
+      status: 'planning',
+      version: 1,
+      request: {
+        city: '北京',
+        start_date: '2026-10-20',
+        end_date: '2026-10-20',
+        transportation: '步行',
+        accommodation: '民宿',
+        preferences: [],
+        free_text_input: ''
+      },
+      data: null,
+      created_at: '2026-10-01T00:00:00',
+      updated_at: '2026-10-01T00:00:00'
+    }
+  }))
+  await page.route('**/api/trip/plans/' + recoveryId + '/resume', route => route.fulfill({
+    json: {
+      success: true,
+      message: '旅行计划恢复完成',
+      plan_id: recoveryId,
+      status: 'completed',
+      version: 2,
+      request: {
+        city: '北京',
+        start_date: '2026-10-20',
+        end_date: '2026-10-20',
+        transportation: '步行',
+        accommodation: '民宿',
+        preferences: [],
+        free_text_input: ''
+      },
+      data: plan,
+      created_at: '2026-10-01T00:00:00',
+      updated_at: '2026-10-01T00:01:00'
+    }
+  }))
+
+  await page.goto('/')
+  await expect(page.getByText('发现未完成的旅行规划')).toBeVisible()
+  const resume = page.getByRole('button', { name: '继续规划' })
+  await expect(resume).toBeEnabled()
+  await resume.click()
+  await expect(page).toHaveURL(/result$/)
+  await expect(page.getByText('故宫测试景点', { exact: true })).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('pendingTripPlanId'))).toBeNull()
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('tripPlanRef')!).version)).toBe(2)
+})
 test('planning remains pending beyond the former two-minute timeout', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-10-01T12:00:00') })
   let release!: () => void

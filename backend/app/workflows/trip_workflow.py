@@ -89,6 +89,9 @@ class TripPlanningWorkflow:
             raise ValueError("invalid thread id")
         return {"configurable": {"thread_id": thread_id}}
 
+    def has_checkpoint(self, thread_id: str) -> bool:
+        return bool(self._graph.get_state(self._thread_config(thread_id)).values)
+
     def resume(self, thread_id: str) -> TripPlan:
         config = self._thread_config(thread_id)
         snapshot = self._graph.get_state(config)

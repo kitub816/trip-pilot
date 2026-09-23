@@ -181,3 +181,7 @@ README 已按现有代码重写，新增约束层可复现 benchmark、原始结
 容器验证阻塞：Docker Engine 未启动或不可连接；已尝试启动现有 Docker Desktop，仍无法连接 named pipe。Nginx 配置尚未实际执行 nginx -t，需引擎恢复后补验，未声称容器通过。远端 CI 等待目标仓库和新分支推送授权。
 
 Docker Nginx 配置补验通过；已推送 `codex/verify-trip-pilot`。GitHub Actions 运行 [35739398025](https://github.com/kitub816/trip-pilot/actions/runs/35739398025) 在提交 `37da895df7f1bdba46a7f4f62fa38809c37d6ac8` 上完成，`backend` 与 `frontend` 均为 success。远端 CI 已完成一次可追溯验证；这不代表真实供应商全链路或部署环境已验收。
+
+## Phase 28 修改
+
+浏览器现在会在规划前保存随机恢复 ID；MySQL 业务记录与 SQLite LangGraph checkpoint 用同一 ID 关联。新增 HTTP 恢复端点和首页 pending 状态检查，模拟路线节点中断后恢复时不会重复已完成的 planner 节点。Compose 增加独立 checkpoint 数据卷。后端 207 passed、2 skipped、1 warning；浏览器 10 passed；前端构建和更新后的前后端镜像构建通过；占位配置 Compose 首页/API 返回 200，checkpoint 卷可写。未调用真实供应商。详见 [phase28.md](phase28.md)。

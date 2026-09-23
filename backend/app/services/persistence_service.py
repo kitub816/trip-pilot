@@ -72,10 +72,10 @@ class PlanStore:
             logger.error("persistence.initialize_failed")
             raise PersistenceUnavailable() from exc
 
-    def start(self, request: TripRequest) -> StoredTripPlan:
+    def start(self, request: TripRequest, plan_id: str | None = None) -> StoredTripPlan:
         now = _utc_now()
         row = TripPlanRow(
-            id=uuid4().hex,
+            id=plan_id or uuid4().hex,
             status="planning",
             version=1,
             request_json=request.model_dump_json(),

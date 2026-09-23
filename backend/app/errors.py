@@ -88,6 +88,18 @@ class PlanVersionConflict(AppError):
     message = "旅行计划已被更新，请刷新后重试"
 
 
+class CheckpointUnavailable(AppError):
+    status_code = 503
+    code = "CHECKPOINT_UNAVAILABLE"
+    message = "工作流恢复未启用，请重新发起规划"
+
+
+class PlanNotResumable(AppError):
+    status_code = 409
+    code = "PLAN_NOT_RESUMABLE"
+    message = "该旅行计划当前无法继续，请重新发起规划"
+
+
 def upstream_failure(exc: BaseException) -> UpstreamError | UpstreamTimeout:
     """SDK wrappers preserve cause/context; classify without reading error text."""
     from httpx import TimeoutException

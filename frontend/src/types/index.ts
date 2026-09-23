@@ -111,6 +111,19 @@ export interface TripPlanResponse {
   version?: number | null
 }
 
+export interface StoredTripPlanResponse {
+  success: boolean
+  message: string
+  plan_id: string
+  status: 'planning' | 'completed' | 'failed'
+  version: number
+  request: TripFormData
+  data?: TripPlan | null
+  error_code?: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface ExtractionPreview {
   travelers?: number | null
   budget_limit?: string | number | null

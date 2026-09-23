@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from dataclasses import is_dataclass
 import sqlite3
 from pathlib import Path
+from threading import Lock
 
 from pydantic import BaseModel
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -11,6 +12,31 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from .. import errors
 from ..models import schemas, knowledge, validation
 from . import constraint_service, retrieval_service
+from ..config import get_settings
+from ..errors import ServiceBusy
+
+
+_active_plan_ids: set[str] = set()
+_active_plan_lock = Lock()
+
+
+def get_checkpoint_path() -> Path | None:
+    raw = get_settings().checkpoint_path.strip()
+    return Path(raw).expanduser().resolve() if raw else None
+
+
+@contextmanager
+def plan_execution(plan_id: str):
+    """Prevent two local workers from advancing the same graph thread at once."""
+    with _active_plan_lock:
+        if plan_id in _active_plan_ids:
+            raise ServiceBusy()
+        _active_plan_ids.add(plan_id)
+    try:
+        yield
+    finally:
+        with _active_plan_lock:
+            _active_plan_ids.discard(plan_id)
 
 
 class CheckpointSerializer:
