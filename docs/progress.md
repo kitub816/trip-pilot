@@ -187,6 +187,6 @@ Docker Nginx 配置补验通过；已推送 `codex/verify-trip-pilot`。GitHub A
 浏览器现在会在规划前保存随机恢复 ID；MySQL 业务记录与 SQLite LangGraph checkpoint 用同一 ID 关联。新增 HTTP 恢复端点和首页 pending 状态检查，模拟路线节点中断后恢复时不会重复已完成的 planner 节点。Compose 增加独立 checkpoint 数据卷。后端 207 passed、2 skipped、1 warning；浏览器 10 passed；前端构建和更新后的前后端镜像构建通过；占位配置 Compose 首页/API 返回 200，checkpoint 卷可写。未调用真实供应商。详见 [phase28.md](phase28.md)。
 ## Phase 29 修改
 
-Alembic 取代 create_all，并兼容升级旧 trip_plans 表。计划 API 增加只存摘要的 256 bit capability token；Compose 默认强制所有权。进程内互斥升级为带心跳和过期接管的数据库租约，记录增加 workflow_version；新增只清理过期终态记录及对应 checkpoint 的 dry-run/执行命令。后端 **212 passed、2 skipped、1 warning**；浏览器 **10 passed**；前端和镜像构建通过。隔离 MySQL 8.4 实际迁移到 0001_plan_ownership，容器 API 所有权验证为 403/403/200。没有调用真实供应商。详见 [phase29.md](phase29.md)。
+Alembic 取代 create_all，并兼容升级旧 trip_plans 表。计划 API 增加只存摘要的 256 bit capability token；Compose 默认强制所有权。进程内互斥升级为带心跳和过期接管的数据库租约，记录增加 workflow_version；新增只清理过期终态记录及对应 checkpoint 的 dry-run/执行命令。后端 **212 passed、2 skipped、1 warning**；浏览器 **10 passed**；前端和镜像构建通过。隔离 MySQL 8.4 实际迁移到 0001_plan_ownership，容器 API 所有权验证为 403/403/200。没有调用真实供应商。GitHub Actions [Verify #35837564540](https://github.com/kitub816/trip-pilot/actions/runs/35837564540) 在实现提交 `0a899ec` 上成功。详见 [phase29.md](phase29.md)。
 
 当前最重要的外部依赖缺口是扩大真实官方语料、验证票务/预约事实，并用真实高德与 LLM 做可重复的全链路案例。当前 capability token 适合个人应用，不等同于公网账号系统；供应商副作用仍不保证 exactly-once。

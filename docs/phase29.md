@@ -51,6 +51,7 @@ MySQL 仍是业务状态事实来源，SQLite 仍只保存 LangGraph checkpoint�
 - Phase 29 测试覆盖：旧 SQLite 表原地迁移、所有权令牌缺失/错误/正确、两个 PlanStore 实例争用同一租约、dry-run 与真实终态记录/checkpoint 清理。
 - 前端生产构建：通过；原有大包 warning 保留。
 - Playwright：**10 passed**；创建和刷新恢复均验证 64 位所有权令牌，恢复沿用同一令牌。
+- GitHub Actions [Verify #35837564540](https://github.com/kitub816/trip-pilot/actions/runs/35837564540) 在实现提交 0a899ec 上完成，backend/frontend 均成功。
 - 更新后的前后端 Docker 镜像构建通过。
 - 隔离的 MySQL 8.4 Compose 实例实际迁移到 0001_plan_ownership；12 个字段和两个二级索引已查询确认。
 - 容器 API 对缺失/错误/正确令牌分别返回 403/403/200；使用人工插入的合成记录，没有调用高德或 LLM。隔离容器及测试卷已删除。

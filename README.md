@@ -90,13 +90,13 @@ npm run build
 - 景点可带计划到访开始/结束时间；确定性校验游览时长和相邻交通间隔。旧计划可无时刻，故宫已有营业时段和免预约硬约束；实际票面时段、节假日例外和无障碍仍未覆盖。
 - 规划调用仍是同步 HelloAgents；HTTP 客户端取消不保证取消后端计算。
 - LangGraph 可用 SQLite checkpoint 恢复已提交节点；正在执行的节点仍可能重试，不承诺供应商调用 exactly-once。计划由浏览器 capability token 保护，数据库租约支持多实例互斥；它不是账号体系，SQLite checkpoint 也不适合多节点共享。
-- 浏览器已有固定 API 的端到端契约测试，仍未覆盖真实供应商浏览器 E2E；构建仍提示主包较大。依赖审计为 0，GitHub Actions 的 backend/frontend 作业已在远端通过。
+- 浏览器已有固定 API 的端到端契约测试，仍未覆盖真实供应商浏览器 E2E；构建仍提示主包较大。依赖审计为 0，GitHub Actions 的 backend/frontend 作业已在远端通过；Phase 29 实现提交 `0a899ec` 对应 [Verify #35837564540](https://github.com/kitub816/trip-pilot/actions/runs/35837564540) 成功。
 
 阶段过程和实测证据见 [项目进度](docs/progress.md)、[重构计划](docs/refactor_plan.md) 与 [Phase 0 架构分析](docs/current_architecture.md)。
 
 Phase 21 已修复北京公交限流重试和交通时长反馈，原失败案例单独复测通过；属于单例结果，不改变历史三例初测记录，也不代表线上成功率。详见 [阶段记录](docs/phase21.md)。
 
-2026-09-23 更新：自由文本约束提取需用户确认；浏览器契约回归当前 10 项，包含 PDF 下载与刷新后恢复；依赖审计为 0。测试使用固定 API 响应，真实供应商浏览器 E2E 仍未完成；GitHub Actions 的 backend/frontend 作业已在远端通过。
+2026-09-23 更新：自由文本约束提取需用户确认；浏览器契约回归当前 10 项，包含 PDF 下载与刷新后恢复；依赖审计为 0。测试使用固定 API 响应，真实供应商浏览器 E2E 仍未完成；GitHub Actions 的 backend/frontend 作业已在远端通过；Phase 29 实现提交 `0a899ec` 对应 [Verify #35837564540](https://github.com/kitub816/trip-pilot/actions/runs/35837564540) 成功。
 
 持久工作流运行时已固定稳定 LangGraph 版本。安装新 requirements 后再运行；本机可使用 backend/.venv/Scripts/python.exe。浏览器回归当前 10 项。
 
