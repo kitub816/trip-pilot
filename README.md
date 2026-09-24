@@ -15,6 +15,10 @@ Vue Home → 生成恢复 ID → POST /api/trip/plan → TripRequest / TravelCon
 
 路线、预算、日期和硬约束由 Python 代码计算。路线优先使用候选景点坐标，构建有界有向矩阵后按固定首点最近邻排序；地图上的点位不等于真实道路折线。开放/闭园判断只使用来源 URL、抓取时间和适用期齐全且标记为 verified 的证据。仓库内置故宫主 POI 的有限日期官方语料，其他缺失或过期事实返回“不确定”，见 [Phase 25](docs/phase25.md)。
 
+## 学习与使用文档
+
+- [研二 Agent 实习项目学习教程](docs/研二Agent实习项目学习教程.md)：架构、源码阅读、14 天学习计划、简历和面试准备。
+- [TripPilot 使用手册](docs/TripPilot使用手册.md)：配置、启动、网页操作、API、恢复、清理和排障。
 ## 本地运行
 
 要求 Python 3.10、Node.js 22、`uvx`，以及你自己的高德 Web 服务 Key 和 LLM Key/模型。前端地图需要高德 JS Key。

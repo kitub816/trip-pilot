@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-Phase 0–29 的阶段代码与记录已落地；关键规格缺口列于下方，不能视为线上验收完成。各阶段独立测试、提交与归档。
+Phase 0–30 的阶段代码与记录已落地；关键规格缺口列于下方，不能视为线上验收完成。各阶段独立测试、提交与归档。
 
 ## 当前架构
 
@@ -190,3 +190,6 @@ Docker Nginx 配置补验通过；已推送 `codex/verify-trip-pilot`。GitHub A
 Alembic 取代 create_all，并兼容升级旧 trip_plans 表。计划 API 增加只存摘要的 256 bit capability token；Compose 默认强制所有权。进程内互斥升级为带心跳和过期接管的数据库租约，记录增加 workflow_version；新增只清理过期终态记录及对应 checkpoint 的 dry-run/执行命令。后端 **212 passed、2 skipped、1 warning**；浏览器 **10 passed**；前端和镜像构建通过。隔离 MySQL 8.4 实际迁移到 0001_plan_ownership，容器 API 所有权验证为 403/403/200。没有调用真实供应商。GitHub Actions [Verify #35837564540](https://github.com/kitub816/trip-pilot/actions/runs/35837564540) 在实现提交 `0a899ec` 上成功。详见 [phase29.md](phase29.md)。
 
 当前最重要的外部依赖缺口是扩大真实官方语料、验证票务/预约事实，并用真实高德与 LLM 做可重复的全链路案例。当前 capability token 适合个人应用，不等同于公网账号系统；供应商副作用仍不保证 exactly-once。
+## Phase 30 修改
+
+新增 [研二 Agent 实习项目学习教程](研二Agent实习项目学习教程.md) 和 [TripPilot 使用手册](TripPilot使用手册.md)。教程从当前真实源码解释约束、LangGraph、MCP Runtime、候选 ID、确定性路线/预算/校验、RAG、持久恢复与测试，并给出 14 天学习计划、简历表述和面试问答；手册覆盖 Docker、本地开发、网页、API、恢复、清理和排障。同步更新 resume_project.md 的过期测试数字与缺口描述。本阶段无运行时代码变化，代码验证基线仍为后端 212 passed、2 skipped，前端 build 与 Playwright 10 passed，远端 CI 成功。详见 [phase30.md](phase30.md)。

@@ -71,3 +71,6 @@ GitHub 远端 CI 已在 codex/verify-trip-pilot 分支验证 backend/frontend �
 ## 2026-09-23：Phase 29 更新
 
 Alembic 已取代 create_all，并兼容旧 trip_plans 表原地升级。浏览器计划 API 使用只存摘要的 256 bit capability token；Compose 默认强制所有权。进程内互斥已升级为数据库租约，记录含 workflow_version；新增终态业务记录与 SQLite checkpoint 同步清理 CLI。后端 212 passed、2 skipped、1 warning；浏览器 10 passed；前端和镜像构建通过。隔离 MySQL 8.4 迁移到 0001_plan_ownership，容器所有权验证 403/403/200，未调用真实供应商。GitHub Actions Verify #35837564540 在实现提交 0a899ec 上成功。详见 [phase29.md](phase29.md)。当前个人应用状态基础已补齐；公网账号系统、网络 checkpoint store、更多官方语料、真实预约和大样本真实全链路仍未完成。
+## 2026-09-23：Phase 30 更新
+
+新增研二 Agent 实习项目学习教程和 TripPilot 使用手册，并更新求职项目说明到 Phase 29 的真实能力与验证基线。教程包含源码阅读顺序、核心代码、14 天计划、简历与面试材料；手册包含 Docker/本地运行、网页/API、恢复、清理和排障。无运行时代码变化。详见 [phase30.md](phase30.md)。

@@ -79,3 +79,6 @@
 Alembic 管理 trip_plans 新建与旧表升级；计划 owner token 只保存 SHA-256 摘要，Compose 默认强制校验；数据库租约带续租与过期接管，替代单进程互斥；workflow_version 拒绝不兼容恢复；cleanup_state 支持 dry-run，并只清理过期终态业务记录及对应 checkpoint。隔离 MySQL 8.4 和容器 API 已实测，边界见 [phase29.md](phase29.md)。
 
 剩余工作受真实数据或产品定位约束：扩大官方语料和票务事实、真实供应商浏览器 E2E 与可重复评测；若面向公网，再实现账号/会话/撤销和网络 checkpoint store。
+## Phase 30 学习教程与使用手册（已完成）
+
+以当前代码和测试为事实来源，新增面向研二 Agent 实习的完整源码学习、简历与面试教程，以及面向普通用户和部署者的使用手册。无运行时代码变化，见 [phase30.md](phase30.md)。
