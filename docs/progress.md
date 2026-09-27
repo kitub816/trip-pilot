@@ -199,3 +199,5 @@ Alembic 取代 create_all，并兼容升级旧 trip_plans 表。计划 API 增�
 ## Phase 31 修改
 
 新增真实工作流阶段 SSE：检索、草稿、路线、预算、校验完成后发事件；`result` 在校验后发送，启用业务存储时还要等写入完成；错误只传安全代码。网页用 fetch 读取 POST SSE，并保留原恢复 ID/所有权 token；旧 JSON API 保持可用。Nginx 关闭响应缓冲。后端 **217 passed、2 skipped、1 条第三方警告**；前端 build 和 12 项浏览器契约测试通过。未运行真实供应商浏览器长连接验收，详见 [phase31.md](phase31.md)。
+
+2026-09-27 文档维护：已将[研二 Agent 实习项目学习教程](研二Agent实习项目学习教程.md)同步到 Phase 31 的 SSE 实现、源码路径、测试和能力边界；无运行时代码变化。

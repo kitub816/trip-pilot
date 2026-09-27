@@ -4,7 +4,7 @@
 
 学习目标：读完本文并完成练习后，你应能独立讲清 TripPilot 的业务目标、请求链路、架构取舍、核心源码、测试体系、真实能力边界，并能现场定位问题或扩展一个约束。
 
-事实基线：Phase 0–29 已实现；后端完整离线回归 212 passed、2 skipped；前端生产构建与 10 项 Playwright 测试通过；GitHub Actions backend/frontend 作业通过。历史 P50/P95 只测本地约束层，不是全链路性能。
+事实基线：Phase 0–31 已实现；后端完整离线回归 217 passed、2 skipped；前端生产构建与 12 项 Playwright 测试通过；[Phase 31 的 GitHub Actions](https://github.com/kitub816/trip-pilot/actions/runs/36313422752) 成功。历史 P50/P95 只测本地约束层，不是全链路性能。真实供应商加部署代理的 SSE 长连接仍未验收。
 
 ## 1. 项目定位
 
@@ -17,6 +17,7 @@ TripPilot 不是“让多个 Agent 互相聊天”的演示，而是约束驱动
 - Validator 负责预算、日期、时间、距离等硬约束。
 - MySQL 保存业务状态，SQLite checkpoint 保存执行状态。
 - Redis 只缓存经过类型校验的检索事实。
+- SSE 把已完成的工作流阶段及时传到网页；它不改变规划与硬约束判断。
 
 面试定位可以说：
 
@@ -28,7 +29,7 @@ TripPilot 不是“让多个 Agent 互相聊天”的演示，而是约束驱动
 Vue Home
   │ 结构化表单 / 自由文本提取预览 / 用户确认
   ▼
-POST /api/trip/plan
+POST /api/trip/plan/stream（网页）；POST /api/trip/plan（兼容 JSON 客户端）
   │ TripRequest → TravelConstraints
   ▼
 LangGraph
@@ -46,6 +47,8 @@ LangGraph
   ├─ MySQL：状态、版本、所有权摘要、数据库租约
   ├─ SQLite：LangGraph checkpoint
   └─ Redis：类型化地图检索缓存
+  │ SSE progress：检索 / 草稿 / 路线 / 预算 / 校验
+  │ SSE result：校验后；启用业务存储时还需写入完成
   ▼
 Vue Result：行程、预算、天气、来源、告警、编辑、地图、导出
 ~~~
@@ -54,7 +57,7 @@ Vue Result：行程、预算、天气、来源、告警、编辑、地图、导�
 
 | 层 | 文件 | 重点 |
 | --- | --- | --- |
-| API | backend/app/api/routes/trip.py | 创建、读取、恢复、更新 |
+| API | backend/app/api/routes/trip.py | 创建、SSE 进度、读取、恢复、更新 |
 | 模型 | backend/app/models/schemas.py | TripRequest、TripPlan |
 | 约束 | backend/app/services/constraint_service.py | 显式字段优先 |
 | 工作流 | backend/app/workflows/trip_workflow.py | State、节点、分支 |
@@ -67,7 +70,7 @@ Vue Result：行程、预算、天气、来源、告警、编辑、地图、导�
 | RAG | backend/app/services/rag_service.py | 来源、适用期、可信状态 |
 | 状态 | backend/app/services/persistence_service.py | 乐观锁与租约 |
 | checkpoint | backend/app/services/checkpoint_service.py | 序列化与恢复 |
-| 前端 | frontend/src/views、frontend/src/services/api.ts | 用户闭环 |
+| 前端 | frontend/src/views、frontend/src/services/api.ts | 用户闭环与 POST SSE 解析 |
 | 测试 | backend/tests、frontend/e2e | 风险验证 |
 
 ## 3. 输入与约束
@@ -226,7 +229,8 @@ Alembic 0001_plan_ownership 支持新表与旧表升级。workflow_version 不�
 
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
-| POST | /api/trip/plan | 创建计划 |
+| POST | /api/trip/plan/stream | 网页创建计划并接收 SSE 阶段与结果 |
+| POST | /api/trip/plan | 兼容 JSON 客户端，一次返回结果 |
 | POST | /api/trip/extract | 提取预览 |
 | GET | /api/trip/plans/{plan_id} | 查询状态 |
 | POST | /api/trip/plans/{plan_id}/resume | 恢复 |
@@ -236,6 +240,34 @@ Alembic 0001_plan_ownership 支持新表与旧表升级。workflow_version 不�
 浏览器在请求前保存恢复 ID 和 owner token。网络错误、超时或 5xx 保留 pending ID；刷新可检查并恢复。PUT 携带 expected_version，后端重算路线、预算并复验，版本冲突不会静默覆盖。
 
 结果页支持行程、天气、预算、来源、warning、地图、时刻编辑、PNG 与 PDF。
+
+### 10.1 真正的流式进度：从图节点到网页
+
+Phase 31 解决的是长任务的**可见性**。它发送阶段事件，而不是模型逐 token 输出。`progress` 表示对应工作已完成，`result` 才是可展示的最终计划；`error` 只包含公开错误码和安全提示。进度条的百分比是阶段标识，不是预计剩余时间。
+
+事件来自实际代码执行点。例如 `backend/app/workflows/trip_workflow.py` 在检索与证据读取都结束后才报告 `retrieved`：
+
+~~~python
+retrieval = retrieve_trip_context(state["constraints"])
+evidence_result = retrieve_trip_evidence(
+    retrieval.attractions, state["constraints"].start_date,
+    state["constraints"].end_date,
+)
+self._progress("retrieved")
+~~~
+
+后续仅在 Planner 生成草稿、RouteOptimizer 返回、BudgetEngine 返回、Validator 校验通过后分别报告 `drafted`、`routed`、`budgeted`、`validated`。若硬约束触发有限重规划，还会报告 `replanning`。草稿不会直接发给用户作为最终行程。
+
+FastAPI 的 `/api/trip/plan/stream` 在后台线程运行原规划路径，用请求内队列向 SSE 响应供给事件。实际帧格式来自 `backend/app/api/routes/trip.py`：
+
+~~~python
+def _sse(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+~~~
+
+前端使用 `fetch` 加 `ReadableStream` 解析 POST 响应，因为请求需要 JSON body、恢复 ID 和 owner token header；原生 `EventSource` 不适合直接承载这次 POST。15 秒心跳和 Nginx `proxy_buffering off` 帮助长连接及时传递进度。服务端每进程最多运行 4 个流式规划线程。浏览器断开或 600 秒等待上限到达不保证停止服务端计算：启用 MySQL 与 SQLite checkpoint 时，用户应使用保存的 plan ID 查询状态或恢复。`resume` 当前仍是 JSON 接口。
+
+练习：在 `backend/tests/test_phase31_streaming.py` 找到事件闸门测试，解释它怎样证明 `progress` 在 `result` 之前可读；再看浏览器测试怎样先显示“检索完成”，随后进入结果页。最后手绘失败路径：SSE `error`、连接意外结束、刷新后状态检查分别如何处理。
 
 ## 11. 测试地图
 
@@ -259,6 +291,7 @@ Alembic 0001_plan_ownership 支持新表与旧表升级。workflow_version 不�
 | checkpoint | test_phase26_checkpoint.py |
 | 网页恢复 | test_phase28_web_recovery.py |
 | 迁移/所有权/租约 | test_phase29_state_security.py |
+| 阶段流、持久结果与安全错误 | test_phase31_streaming.py |
 | 浏览器 | frontend/e2e/trip.spec.ts |
 
 CI 使用 Python 3.10 和 Node 22，运行后端全量测试、前端构建和 Playwright。
@@ -271,7 +304,7 @@ CI 使用 Python 3.10 和 Node 22，运行后端全量测试、前端构建和 P
 - 第 7–8 天：读 retrieval、runtime、amap，理解超时、重试和部分失败。
 - 第 9–10 天：读 route、budget、validator、rag，追踪一个 violation。
 - 第 11–12 天：读 trip API、PlanStore、checkpoint、migration，画恢复过程。
-- 第 13 天：读 Vue、api.ts、Compose、Nginx、CI，跑 Playwright。
+- 第 13 天：读 Vue、api.ts、SSE、Compose、Nginx、CI，跑 Playwright 并解释进度事件与最终结果的区别。
 - 第 14 天：做 8 分钟项目介绍、两个失败案例和一个架构取舍。
 
 每阶段验收：离开文档口述，并定位到真实源码和测试。
@@ -287,7 +320,7 @@ CI 使用 Python 3.10 和 Node 22，运行后端全量测试、前端构建和 P
 - 基于 FastAPI、LangGraph 和 Pydantic 构建 plan → route → budget → validate → bounded replan；LLM 只生成候选 ID 草稿，地点身份由服务端水合。
 - 设计 MCP Tool Runtime，支持 schema/参数校验、单次与总超时、有界重试、并发配额、部分失败和子进程清理；Redis 仅缓存类型化地图事实。
 - 用确定性 Python 实现路线矩阵、稳定排序、预算、时间窗和硬约束 Validator；仅带来源、抓取时间、适用期和可信状态的 RAG 证据参与硬判断。
-- 用 MySQL、Alembic、乐观锁、capability token、数据库租约和 SQLite checkpoint 实现网页恢复；建立 212 passed、2 skipped 后端回归、10 项 Playwright、Docker Compose 与 GitHub Actions。
+- 用 MySQL、Alembic、乐观锁、capability token、数据库租约和 SQLite checkpoint 实现网页恢复；以 SSE 报告真实工作流阶段，保留 JSON 接口；建立 217 passed、2 skipped 后端回归、12 项 Playwright、Docker Compose 与 GitHub Actions。
 
 数字必须随 docs/progress.md 更新。不得把约束层 P50/P95 写成全链路性能，不得编造 token、成本、命中率或线上成功率。
 
@@ -298,9 +331,9 @@ CI 使用 Python 3.10 和 Node 22，运行后端全量测试、前端构建和 P
 3. 可信输出：候选 ID、extra=forbid、服务端水合。
 4. 可靠工具：MCP timeout、retry、partial failure、Redis。
 5. 硬约束：路线、预算、时间窗、证据与有限 Replan。
-6. 恢复：业务表、checkpoint、owner token、数据库租约、at-least-once。
-7. 验证：212 passed、2 skipped、10 项浏览器、容器迁移、远端 CI。
-8. 反思：官方语料、真实供应商评测、账号和网络 checkpoint。
+6. 长任务体验与恢复：真实阶段 SSE、15 秒心跳、断线后状态查询、checkpoint 与 at-least-once。
+7. 验证：217 passed、2 skipped、12 项浏览器、容器迁移、远端 CI。
+8. 反思：真实供应商长连接、官方语料、评测、账号和网络 checkpoint。
 
 ## 15. 高频问答
 
@@ -319,6 +352,12 @@ CI 使用 Python 3.10 和 Node 22，运行后端全量测试、前端构建和 P
 **checkpoint 保证 exactly-once 吗？**
 不保证。执行中崩溃可能重试；租约只避免并发推进。
 
+**为什么用 SSE，而不是等待完整 JSON 或直接传 LLM token？**
+一次规划可能包含检索、模型、路线矩阵和重规划。阶段 SSE 让用户知道哪些真实工作已完成；它不把未经校验的模型草稿当最终答案。原 JSON 接口供不需要进度的客户端继续使用。
+
+**浏览器断开 SSE 后会怎样？**
+断开连接不保证取消后台工作。启用持久化时，原请求会继续尝试写入计划；用户可凭本地保存的 plan ID 和 owner token 查状态或恢复。流式接口本身不提供事件重放，`resume` 仍返回 JSON。
+
 **为什么不是生产级多用户系统？**
 owner token 没有账号找回、撤销和设备同步；SQLite 是单节点 checkpoint。
 
@@ -330,14 +369,15 @@ owner token 没有账号找回、撤销和设备同步；SQLite 是单节点 che
 2. Phase 11：硬约束触发有限 Replan。
 3. Phase 28：中断恢复且 Planner 不重复。
 4. Phase 29：owner token、数据库租约和清理。
-5. Playwright：创建、错误、编辑、导出和恢复。
+5. Phase 31：进度事件先于结果，流中校验错误不进入结果页。
+6. Playwright：创建、错误、编辑、导出和恢复。
 
 真实配置演示要准备供应商失败预案，展示安全 error_code 和 request_id，不把一次成功当线上指标。
 
 ## 17. 能力边界
 
-已具备 FastAPI、Vue、LangGraph、MCP、Redis、MySQL、Alembic、RAG、Docker、CI，类型边界、确定性硬约束、并发检索、网页恢复和小样本真实记录。
+已具备 FastAPI、Vue、LangGraph、MCP、Redis、MySQL、Alembic、RAG、Docker、CI，类型边界、确定性硬约束、并发检索、真实阶段 SSE、网页恢复和小样本真实记录。
 
-仍缺更多官方语料、真实票务预约、真实供应商浏览器 E2E、大样本评测、可审计 token/成本、统一取消，以及公网账号与网络 checkpoint store。
+仍缺更多官方语料、真实票务预约、真实供应商加部署代理的 SSE/浏览器 E2E、大样本评测、可审计 token/成本、统一取消，以及公网账号与网络 checkpoint store。
 
 真正掌握项目的标准，是能从一个用户约束追踪到最终 violation，解释每个不确定性为何没有被伪装成事实，并用测试证明结论。
