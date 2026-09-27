@@ -12,6 +12,9 @@ const plan = {
     total_transportation: 0, is_complete: false, unknown_items: [] }
 }
 
+const sse = (event: string, data: unknown) =>
+  `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+
 test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-10-01T12:00:00'))
   await page.route('**/api/poi/photo**', route => route.fulfill({ json: { success: false } }))
@@ -46,11 +49,16 @@ async function openStored(page: Page) {
 }
 
 test('create shows returned plan and retrieves persisted version', async ({ page }) => {
-  await page.route('**/api/trip/plan', async route => {
+  await page.route('**/api/trip/plan/stream', async route => {
     expect(route.request().postDataJSON()).toMatchObject({ city: '北京', travel_days: 1 })
     expect(route.request().headers()['x-trip-plan-id']).toMatch(/^[0-9a-f]{32}$/)
     expect(route.request().headers()['x-trip-owner-token']).toMatch(/^[0-9a-f]{64}$/)
-    await route.fulfill({ json: { success: true, data: plan, plan_id: 'fixture', version: 1 } })
+    await route.fulfill({
+      contentType: 'text/event-stream',
+      body: sse('progress', { stage: 'retrieved' }) +
+        sse('progress', { stage: 'validated' }) +
+        sse('result', { success: true, data: plan, plan_id: 'fixture', version: 1 })
+    })
   })
   await page.route('**/api/trip/plans/fixture', route => route.fulfill({ json: { data: plan, version: 2 } }))
   await fillRequest(page)
@@ -60,13 +68,52 @@ test('create shows returned plan and retrieves persisted version', async ({ page
   await expect(page.getByText('09:00–10:00')).toBeVisible()
 })
 
+test('shows a real stream stage before the final plan arrives', async ({ page }) => {
+  await page.addInitScript(p => {
+    const originalFetch = window.fetch.bind(window)
+    window.fetch = (input, init) => {
+      if (!String(input).includes('/api/trip/plan/stream')) return originalFetch(input, init)
+      const encoder = new TextEncoder()
+      return Promise.resolve(new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('event: progress\ndata: {"stage":"retrieved"}\n\n'))
+          setTimeout(() => {
+            controller.enqueue(encoder.encode(
+              `event: result\ndata: ${JSON.stringify({ success: true, data: p })}\n\n`))
+            controller.close()
+          }, 1200)
+        }
+      }), { headers: { 'Content-Type': 'text/event-stream' } }))
+    }
+  }, plan)
+  await fillRequest(page)
+  await page.getByRole('button', { name: '开始规划我的旅行' }).click()
+  await expect(page.getByText('检索完成，正在生成行程草稿…')).toBeVisible()
+  await expect(page).toHaveURL(/result$/)
+})
+
 test('planning error stays on form and supports retry', async ({ page }) => {
-  await page.route('**/api/trip/plan', route => route.fulfill({
+  await page.route('**/api/trip/plan/stream', route => route.fulfill({
     status: 422, json: { message: '行程无法满足时间约束' }
   }))
   await fillRequest(page)
   await page.getByRole('button', { name: '开始规划我的旅行' }).click()
   await expect(page.getByText('行程无法满足时间约束')).toBeVisible()
+  await expect(page.getByRole('button', { name: '开始规划我的旅行' })).toBeEnabled()
+  await expect(page).toHaveURL(/\/$/)
+})
+
+test('streamed validation error stays on form', async ({ page }) => {
+  await page.route('**/api/trip/plan/stream', route => route.fulfill({
+    contentType: 'text/event-stream',
+    body: sse('progress', { stage: 'budgeted' }) + sse('error', {
+      error_code: 'PLAN_VALIDATION_ERROR', status_code: 422,
+      message: '旅行计划未满足确定性约束，请调整输入后重试'
+    })
+  }))
+  await fillRequest(page)
+  await page.getByRole('button', { name: '开始规划我的旅行' }).click()
+  await expect(page.getByText('旅行计划未满足确定性约束，请调整输入后重试')).toBeVisible()
   await expect(page.getByRole('button', { name: '开始规划我的旅行' })).toBeEnabled()
   await expect(page).toHaveURL(/\/$/)
 })
@@ -225,16 +272,17 @@ test('reload resumes a pending checkpoint and opens the completed plan', async (
   expect(await page.evaluate(() => localStorage.getItem('pendingTripPlanId'))).toBeNull()
   expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('tripPlanRef')!).version)).toBe(2)
 })
-test('planning remains pending beyond the former two-minute timeout', async ({ page }) => {
+test('streaming request remains pending beyond the former two-minute timeout', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-10-01T12:00:00') })
   let release!: () => void
   const pending = new Promise<void>(resolve => { release = resolve })
-  await page.route('**/api/trip/plan', async route => {
+  await page.route('**/api/trip/plan/stream', async route => {
     await pending
-    await route.fulfill({ json: { success: true, data: plan } })
+    await route.fulfill({ contentType: 'text/event-stream',
+      body: sse('result', { success: true, data: plan }) })
   })
   await fillRequest(page)
-  const requested = page.waitForRequest('**/api/trip/plan')
+  const requested = page.waitForRequest('**/api/trip/plan/stream')
   await page.getByRole('button', { name: '开始规划我的旅行' }).click()
   await requested
   await page.clock.fastForward(121000)

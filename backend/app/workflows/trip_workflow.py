@@ -37,6 +37,10 @@ class TripWorkflowState(TypedDict):
 
 
 PlannerFactory = Callable[[], MultiAgentTripPlanner]
+ProgressStage = Literal[
+    "started", "retrieved", "drafted", "routed", "budgeted", "replanning", "validated",
+]
+ProgressCallback = Callable[[ProgressStage], None]
 
 
 class TripPlanningWorkflow:
@@ -47,11 +51,13 @@ class TripPlanningWorkflow:
                  route_optimizer: RouteOptimizer | None = None,
                  validator: PlanValidator | None = None,
                  max_replan_attempts: int | None = None,
-                 checkpointer: BaseCheckpointSaver | None = None) -> None:
+                 checkpointer: BaseCheckpointSaver | None = None,
+                 on_progress: ProgressCallback | None = None) -> None:
         self._planner_factory = planner_factory
         self._budget_engine = budget_engine or get_budget_engine()
         self._route_optimizer = route_optimizer or get_route_optimizer()
         self._validator = validator or get_plan_validator()
+        self._on_progress = on_progress
         self._max_replan_attempts = (
             get_settings().max_replan_attempts
             if max_replan_attempts is None else max_replan_attempts
@@ -128,6 +134,7 @@ class TripPlanningWorkflow:
                 retrieval.attractions, state["constraints"].start_date,
                 state["constraints"].end_date,
             )
+            self._progress("retrieved")
             planner = self._planner_factory()
             if hasattr(planner, "plan_from_retrieval"):
                 arguments = (
@@ -140,6 +147,7 @@ class TripPlanningWorkflow:
             else:
                 # Keeps isolated test doubles and older integrations compatible.
                 plan = planner.plan_trip(state["constraints"])
+            self._progress("drafted")
             return {
                 "plan": plan, "status": "routing", "error": None, "retrieval": retrieval,
                 "violations": (), "replan_attempts": 0, "evidence": evidence_result.evidence,
@@ -157,8 +165,10 @@ class TripPlanningWorkflow:
         plan = state["plan"]
         if plan is None:
             return {"status": "failed", "error": upstream_failure(RuntimeError("missing plan"))}
+        routed = self._route_optimizer.apply(plan, state["constraints"])
+        self._progress("routed")
         return {
-            "plan": self._route_optimizer.apply(plan, state["constraints"]),
+            "plan": routed,
             "status": "budgeting",
             "error": None,
         }
@@ -168,8 +178,10 @@ class TripPlanningWorkflow:
         plan = state["plan"]
         if plan is None:
             return {"status": "failed", "error": upstream_failure(RuntimeError("missing plan"))}
+        budgeted = self._budget_engine.apply(plan, state["constraints"])
+        self._progress("budgeted")
         return {
-            "plan": self._budget_engine.apply(plan, state["constraints"]),
+            "plan": budgeted,
             "status": "validating",
             "error": None,
         }
@@ -196,6 +208,7 @@ class TripPlanningWorkflow:
                 "evidence": [item for item in state["evidence"] if item.poi_id in selected],
                 "validation_warnings": [v for v in result.violations if v.severity == "warning"],
             })
+            self._progress("validated")
             return {"status": "completed", "plan": validated,
                     "violations": tuple(result.violations), "error": None}
         if state["replan_attempts"] >= self._max_replan_attempts or state["retrieval"] is None:
@@ -203,6 +216,7 @@ class TripPlanningWorkflow:
                 "status": "failed", "violations": tuple(result.violations),
                 "error": PlanValidationError(),
             }
+        self._progress("replanning")
         return {"status": "replanning", "violations": tuple(result.violations), "error": None}
 
     @staticmethod
@@ -230,6 +244,7 @@ class TripPlanningWorkflow:
                 plan = planner.replan_from_retrieval(*arguments, evidence=state["evidence"])
             else:
                 plan = planner.replan_from_retrieval(*arguments)
+            self._progress("drafted")
             return {
                 "plan": plan, "status": "routing", "error": None,
                 "replan_attempts": state["replan_attempts"] + 1,
@@ -245,6 +260,10 @@ class TripPlanningWorkflow:
     @staticmethod
     def _log_node(node: str) -> None:
         logger.info("workflow.node.started", extra={"workflow_node": node})
+
+    def _progress(self, stage: ProgressStage) -> None:
+        if self._on_progress is not None:
+            self._on_progress(stage)
 
 
 _trip_workflow: TripPlanningWorkflow | None = None

@@ -251,6 +251,15 @@ const router = useRouter()
 const loading = ref(false)
 const loadingProgress = ref(0)
 const loadingStatus = ref('')
+const progressStages: Record<string, { percent: number; label: string }> = {
+  started: { percent: 5, label: '已接收请求，正在检索景点与天气…' },
+  retrieved: { percent: 30, label: '检索完成，正在生成行程草稿…' },
+  drafted: { percent: 55, label: '草稿已生成，正在核算路线…' },
+  routed: { percent: 70, label: '路线已核算，正在计算预算…' },
+  budgeted: { percent: 80, label: '预算已计算，正在校验硬约束…' },
+  replanning: { percent: 85, label: '发现约束冲突，正在有限重规划…' },
+  validated: { percent: 95, label: '硬约束校验通过，正在保存计划…' }
+}
 const mustVisitText = ref('')
 const avoidPlacesText = ref('')
 let requestController: AbortController | null = null
@@ -408,7 +417,7 @@ const handleSubmit = async () => {
   loadingProgress.value = 0
   loadingStatus.value = '正在初始化...'
   requestController = new AbortController()
-  loadingStatus.value = '正在规划，等待服务端结果...'
+  loadingStatus.value = '正在连接规划服务…'
   let submittedRecoveryId: string | null = null
 
   try {
@@ -440,7 +449,13 @@ const handleSubmit = async () => {
     const response = await generateTripPlan(
       requestData,
       requestController.signal,
-      submittedRecoveryId
+      submittedRecoveryId,
+      stage => {
+        const progress = progressStages[stage]
+        if (!progress) return
+        loadingProgress.value = Math.max(loadingProgress.value, progress.percent)
+        loadingStatus.value = progress.label
+      }
     )
     loadingProgress.value = 100
     loadingStatus.value = '✅ 完成!'

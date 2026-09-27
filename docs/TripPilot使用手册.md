@@ -202,7 +202,7 @@ VITE_AMAP_SECURITY_JS_CODE=
 
 ### 5.4 生成计划
 
-点击“开始规划我的旅行”。真实规划可能较慢，前端和代理上限为 600 秒。关闭页面或网络中断不一定会取消后端计算。
+点击“开始规划我的旅行”。页面会按实际工作流依次显示检索、草稿、路线、预算和约束校验的进展；进度百分比只表示阶段，不预测剩余时间。真实规划可能较慢，前端和代理上限为 600 秒。关闭页面或网络中断不一定会取消后端计算。
 
 请求前浏览器保存 32 位恢复 ID 和 64 位 owner token。规划期间不要清除该站点的 localStorage。
 
@@ -300,6 +300,8 @@ $params = @{
 Invoke-RestMethod @params
 ~~~
 
+网页调用 `/api/trip/plan/stream`，用相同 JSON body 和 header 接收 SSE：`progress` 传阶段名，`result` 传完成计划，`error` 传安全错误码。上面的 `/plan` 仍适合只需要一次 JSON 结果的脚本。不要为查看两种输出对同一请求分别调用接口，否则会发起两次真实规划。
+
 示例 owner 只用于本地调试。实际客户端应生成随机令牌。
 
 ### 7.3 查询和恢复
@@ -323,7 +325,7 @@ cd E:\travel-agents-1\helloagents-trip-planner\backend
 .\.venv\Scripts\python.exe -m pytest
 ~~~
 
-当前基线：212 passed、2 skipped、1 条第三方 warning。两个 skipped 是需外部 Redis/MySQL 条件的集成测试。
+当前基线：217 passed、2 skipped、1 条第三方 warning。两个 skipped 是需外部 Redis/MySQL 条件的集成测试。
 
 前端：
 

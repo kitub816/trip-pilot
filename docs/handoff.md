@@ -74,3 +74,7 @@ Alembic 已取代 create_all，并兼容旧 trip_plans 表原地升级。浏览�
 ## 2026-09-23：Phase 30 更新
 
 新增研二 Agent 实习项目学习教程和 TripPilot 使用手册，并更新求职项目说明到 Phase 29 的真实能力与验证基线。教程包含源码阅读顺序、核心代码、14 天计划、简历与面试材料；手册包含 Docker/本地运行、网页/API、恢复、清理和排障。无运行时代码变化。详见 [phase30.md](phase30.md)。
+
+## 2026-09-27：Phase 31 更新
+
+网页规划改用 `POST /api/trip/plan/stream` 接收真实工作流阶段 SSE；原 JSON `/plan` 保留。结果须通过确定性校验；启用业务存储时还须写入完成后才返回。后端 217 passed、2 skipped；前端 build、12 项浏览器契约测试通过。长连接尚未以真实高德/LLM 与部署代理验收。详见 [phase31.md](phase31.md)。

@@ -1,7 +1,13 @@
 """Trip API; synchronous SDK calls run in FastAPI's worker pool."""
+import json
+import logging
+from time import monotonic
+from queue import Empty, Queue
+from threading import BoundedSemaphore, Thread
 from typing import Annotated
 
 from fastapi import APIRouter, Header
+from fastapi.responses import StreamingResponse
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from ...agents.trip_planner_agent import get_trip_planner_agent
@@ -12,6 +18,7 @@ from ...errors import (
     PersistenceUnavailable,
     PlanNotResumable,
     PlanValidationError,
+    ServiceBusy,
     WorkflowVersionUnsupported,
 )
 from ...models.schemas import (
@@ -20,6 +27,7 @@ from ...models.schemas import (
     TripPlanUpdateRequest,
     TripRequest,
 )
+from ...logging_config import request_id
 from ...services.budget_service import get_budget_engine
 from ...services.checkpoint_service import get_checkpoint_path, sqlite_checkpointer
 from ...services.constraint_service import build_travel_constraints
@@ -33,11 +41,13 @@ from ...services.persistence_service import (
 from ...services.rag_service import retrieve_plan_evidence
 from ...services.route_service import get_route_optimizer
 from ...services.validation_service import get_plan_validator
-from ...workflows.trip_workflow import TripPlanningWorkflow
+from ...workflows.trip_workflow import ProgressCallback, TripPlanningWorkflow
 
 from ...services.extraction_service import ConstraintExtractor, ExtractionPreview, ExtractionRequest
 
 router = APIRouter(prefix="/trip", tags=["旅行规划"])
+logger = logging.getLogger("trippilot.trip_stream")
+_stream_slots = BoundedSemaphore(4)
 OwnerHeader = Annotated[
     str | None,
     Header(alias="X-Trip-Owner-Token", pattern=r"^[0-9a-f]{64}$"),
@@ -92,6 +102,7 @@ def _run_durable(
     record: StoredTripPlan,
     *,
     resume: bool,
+    on_progress: ProgressCallback | None = None,
 ) -> StoredTripPlan:
     path = get_checkpoint_path()
     if path is None:
@@ -106,7 +117,13 @@ def _run_durable(
     ) as lease:
         try:
             with sqlite_checkpointer(path) as saver:
-                workflow = build_durable_workflow(saver)
+                workflow = (
+                    TripPlanningWorkflow(
+                        planner_factory=get_trip_planner_agent,
+                        checkpointer=saver,
+                        on_progress=on_progress,
+                    ) if on_progress is not None else build_durable_workflow(saver)
+                )
                 if resume and workflow.has_checkpoint(record.plan_id):
                     plan = workflow.resume(record.plan_id)
                 else:
@@ -120,15 +137,12 @@ def _run_durable(
         return store.complete(record.plan_id, plan, record.version)
 
 
-@router.post("/plan", response_model=TripPlanResponse, summary="生成旅行计划")
-def plan_trip(
+def _plan_trip(
     request: TripRequest,
-    recovery_id: Annotated[
-        str | None,
-        Header(alias="X-Trip-Plan-ID", pattern=r"^[0-9a-f]{32}$"),
-    ] = None,
-    owner_token: OwnerHeader = None,
-):
+    recovery_id: str | None,
+    owner_token: str | None,
+    on_progress: ProgressCallback | None = None,
+) -> TripPlanResponse:
     constraints = build_travel_constraints(request)
     store = get_plan_store()
     owner_hash = require_owner_hash(owner_token) if store is not None else None
@@ -140,12 +154,18 @@ def plan_trip(
         record = store.start(request, owner_token_hash=owner_hash)
     else:
         record = store.start(request)
+    if on_progress is not None:
+        on_progress("started")
     if record is not None and get_checkpoint_path() is not None:
-        record = _run_durable(store, record, resume=False)
+        record = _run_durable(store, record, resume=False, on_progress=on_progress)
         plan = record.plan
     else:
         try:
-            plan = get_trip_workflow().plan(constraints)
+            workflow = (
+                TripPlanningWorkflow(planner_factory=get_trip_planner_agent, on_progress=on_progress)
+                if on_progress is not None else get_trip_workflow()
+            )
+            plan = workflow.plan(constraints)
         except AppError as error:
             if store is not None and record is not None:
                 store.fail(record.plan_id, error.code, record.version)
@@ -162,6 +182,81 @@ def plan_trip(
         data=plan,
         plan_id=record.plan_id if record else None,
         version=record.version if record else None,
+    )
+
+
+RecoveryHeader = Annotated[
+    str | None,
+    Header(alias="X-Trip-Plan-ID", pattern=r"^[0-9a-f]{32}$"),
+]
+
+
+@router.post("/plan", response_model=TripPlanResponse, summary="生成旅行计划")
+def plan_trip(
+    request: TripRequest,
+    recovery_id: RecoveryHeader = None,
+    owner_token: OwnerHeader = None,
+):
+    return _plan_trip(request, recovery_id, owner_token)
+
+
+def _sse(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+@router.post("/plan/stream", summary="流式生成旅行计划")
+def stream_plan_trip(
+    request: TripRequest,
+    recovery_id: RecoveryHeader = None,
+    owner_token: OwnerHeader = None,
+):
+    """Progress is observed from real workflow steps; the worker survives disconnects."""
+    if not _stream_slots.acquire(blocking=False):
+        raise ServiceBusy()
+    events: Queue[tuple[str, dict]] = Queue()
+    correlation_id = request_id.get()
+
+    def work() -> None:
+        context_token = request_id.set(correlation_id)
+        started = monotonic()
+        try:
+            result = _plan_trip(
+                request, recovery_id, owner_token,
+                lambda stage: events.put(("progress", {"stage": stage})),
+            )
+            events.put(("result", result.model_dump(mode="json")))
+            logger.info("stream.completed", extra={"duration_ms": round((monotonic() - started) * 1000, 3)})
+        except AppError as error:
+            events.put(("error", {"error_code": error.code, "message": error.message,
+                                  "status_code": error.status_code}))
+            logger.warning("stream.failed", extra={"error_code": error.code})
+        except Exception:
+            logger.exception("stream.planning_failed")
+            events.put(("error", {"error_code": "INTERNAL_ERROR", "message": "服务内部错误，请稍后重试"}))
+        finally:
+            request_id.reset(context_token)
+            _stream_slots.release()
+
+    try:
+        Thread(target=work, daemon=True, name="trip-plan-stream").start()
+    except Exception:
+        _stream_slots.release()
+        raise
+
+    def stream():
+        while True:
+            try:
+                event, payload = events.get(timeout=15)
+            except Empty:
+                yield ": heartbeat\n\n"
+                continue
+            yield _sse(event, payload)
+            if event in ("result", "error"):
+                return
+
+    return StreamingResponse(
+        stream(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

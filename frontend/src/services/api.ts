@@ -41,29 +41,71 @@ export class PlanningRequestError extends Error {
 export async function generateTripPlan(
   formData: TripFormData,
   signal?: AbortSignal,
-  recoveryId?: string
+  recoveryId?: string,
+  onProgress?: (stage: string) => void
 ): Promise<TripPlanResponse> {
+  const controller = new AbortController()
+  let timedOut = false
+  const cancel = () => controller.abort()
+  signal?.addEventListener('abort', cancel, { once: true })
+  if (signal?.aborted) controller.abort()
+  const timer = window.setTimeout(() => { timedOut = true; controller.abort() }, 600000)
   try {
-    const response = await apiClient.post<TripPlanResponse>('/api/trip/plan', formData, {
-      signal,
-      timeout: 600000,
+    const response = await fetch(`${API_BASE_URL}/api/trip/plan/stream`, {
+      method: 'POST',
+      signal: controller.signal,
       headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
         ...ownerHeaders(),
         ...(recoveryId ? { 'X-Trip-Plan-ID': recoveryId } : {})
-      }
+      },
+      body: JSON.stringify(formData)
     })
-    return response.data
-  } catch (error) {
-    if (axios.isCancel(error)) throw new PlanningRequestError('规划已取消，可稍后检查恢复状态', true)
-    if (axios.isAxiosError(error)) {
-      if (error.code === 'ECONNABORTED') {
-        throw new PlanningRequestError('等待规划结果超时，可稍后检查恢复状态', true)
-      }
-      const message = error.response?.data?.detail || error.response?.data?.message || '生成旅行计划失败'
-      const status = error.response?.status
-      throw new PlanningRequestError(message, status == null || status >= 500)
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new PlanningRequestError(body.detail || body.message || '生成旅行计划失败', response.status >= 500)
     }
-    throw new PlanningRequestError('生成旅行计划失败', true)
+    if (!response.body) throw new PlanningRequestError('浏览器不支持规划进度流', true)
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let result: TripPlanResponse | null = null
+    const handleFrame = (frame: string) => {
+      const event = frame.match(/^event: (.+)$/m)?.[1]
+      const data = frame.split('\n').filter(line => line.startsWith('data: '))
+        .map(line => line.slice(6)).join('\n')
+      if (!event || !data) return
+      const payload = JSON.parse(data)
+      if (event === 'progress') onProgress?.(payload.stage)
+      if (event === 'result') result = payload as TripPlanResponse
+      if (event === 'error') {
+        throw new PlanningRequestError(payload.message || '生成旅行计划失败',
+          (payload.status_code || 500) >= 500)
+      }
+    }
+    while (true) {
+      const { value, done } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      let boundary = buffer.search(/\r?\n\r?\n/)
+      while (boundary !== -1) {
+        handleFrame(buffer.slice(0, boundary).replace(/\r\n/g, '\n'))
+        const separator = buffer.slice(boundary).match(/^\r?\n\r?\n/)![0]
+        buffer = buffer.slice(boundary + separator.length)
+        boundary = buffer.search(/\r?\n\r?\n/)
+      }
+      if (result) return result
+      if (done) break
+    }
+    throw new PlanningRequestError('规划连接中断，可稍后检查恢复状态', true)
+  } catch (error) {
+    if (error instanceof PlanningRequestError) throw error
+    if (controller.signal.aborted) throw new PlanningRequestError(
+      timedOut ? '等待规划结果超时，可稍后检查恢复状态' : '规划已取消，可稍后检查恢复状态', true)
+    throw new PlanningRequestError('规划连接中断，可稍后检查恢复状态', true)
+  } finally {
+    window.clearTimeout(timer)
+    signal?.removeEventListener('abort', cancel)
   }
 }
 
