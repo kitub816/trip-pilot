@@ -90,3 +90,7 @@ Alembic 已取代 create_all，并兼容旧 trip_plans 表原地升级。浏览�
 ## 2026-09-28：Phase 34 更新
 
 用户复测两轮规划均以同一公交 `ROUTE_UNAVAILABLE` 失败。高德成功但 `transits=[]` 时现改查实测步行路线，真实天安门到故宫探针为 1064 米、851 秒；其他上游错误和硬约束不放宽。后端 220 passed、2 skipped，服务已重启；完整网页规划待用户重试。详见 [phase34.md](phase34.md)。
+
+## 2026-09-28：Phase 35 更新
+
+西安 3 天案例重规划后仍有 `VISIT_TIME_CONFLICT`。路线阶段现在用实测交通时长向上取整并确定性顺延后续到访时刻，未知路线和跨午夜不编造。专项 32 passed，后端 222 passed、2 skipped；服务已重启，西安完整案例待用户复测。详见 [phase35.md](phase35.md)。

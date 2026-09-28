@@ -1,6 +1,7 @@
 """Bounded deterministic route-matrix construction and daily ordering."""
 
 import asyncio
+from datetime import date, datetime, timedelta
 from typing import Protocol
 
 from ..config import get_settings
@@ -58,6 +59,7 @@ class RouteOptimizer:
                  else self._order(points, matrix, constraints.max_single_transport_minutes))
         ordered = [points[index] for index in order] + trailing
         legs, warnings = self._legs(points, order, matrix, constraints)
+        ordered = self._align_visit_windows(ordered, legs)
         if trailing:
             warnings.append("MATRIX_TRUNCATED")
         warning_codes = list(dict.fromkeys(warnings))
@@ -76,6 +78,44 @@ class RouteOptimizer:
             within_limits=within_limits,
             warning_codes=warning_codes,
         )
+
+    @staticmethod
+    def _align_visit_windows(
+        attractions: list[Attraction], legs: list[RouteLeg],
+    ) -> list[Attraction]:
+        """Shift model-proposed visits forward using measured travel durations."""
+        aligned: list[Attraction] = []
+        previous_end: datetime | None = None
+        for index, attraction in enumerate(attractions):
+            if attraction.visit_start is None or attraction.visit_end is None:
+                aligned.append(attraction)
+                previous_end = None
+                continue
+
+            start = datetime.combine(date.min, attraction.visit_start)
+            if previous_end is not None and index - 1 < len(legs):
+                travel_seconds = legs[index - 1].duration
+                if travel_seconds is not None:
+                    travel_minutes = (travel_seconds + 59) // 60
+                    earliest = previous_end + timedelta(minutes=travel_minutes)
+                    if earliest.date() != date.min:
+                        aligned.append(attraction)
+                        previous_end = datetime.combine(date.min, attraction.visit_end)
+                        continue
+                    start = max(start, earliest)
+
+            end = start + timedelta(minutes=attraction.visit_duration)
+            if end.date() != date.min:
+                aligned.append(attraction)
+                previous_end = datetime.combine(date.min, attraction.visit_end)
+                continue
+            updated = attraction.model_copy(update={
+                "visit_start": start.time(),
+                "visit_end": end.time(),
+            })
+            aligned.append(updated)
+            previous_end = end
+        return aligned
 
     async def _matrix(
         self, points: list[Attraction], city: str, route_type: str,
