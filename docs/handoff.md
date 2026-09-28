@@ -82,3 +82,7 @@ Alembic 已取代 create_all，并兼容旧 trip_plans 表原地升级。浏览�
 ## 2026-09-28：Phase 32 更新
 
 `NO_CANDIDATES` 定位为 Windows 系统代理导致高德 MCP ProxyError/SSL EOF。已为高德子进程设置 NO_PROXY，并关闭公交 HTTP 客户端的环境代理继承。后端 219 passed、2 skipped；Windows 本地 MCP 和前端代理真实返回 6 条北京 POI。Docker 中高德 TLS 仍失败，当前运行入口为 `http://localhost:5173`，未验证真实 LLM 完整规划。详见 [phase32.md](phase32.md)。
+
+## 2026-09-28：Phase 33 更新
+
+真实规划在 85% 重规划阶段等待过久，定位为 180 秒单次超时叠加 OpenAI SDK 默认两次隐式重试。已将固定版 HelloAgents 的底层客户端设置为 `max_retries=0`，业务级一次重规划不变。后端 219 passed、2 skipped，服务已重启且健康检查 200；尚未重跑真实完整规划。详见 [phase33.md](phase33.md)。

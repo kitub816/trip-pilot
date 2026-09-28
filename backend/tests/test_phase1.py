@@ -248,6 +248,7 @@ def test_llm_configuration_explicit_and_closed(monkeypatch):
     monkeypatch.setattr(llm_service, "_llm_instance", None)
     assert llm_service.get_llm() is client
     assert constructor.call_args.kwargs == dict(api_key="test-secret", base_url="https://api.openai.com/v1", model="test-model", timeout=60, provider="custom")
+    assert client._client.max_retries == 0
     llm_service.reset_llm()
     llm_service.reset_llm()
     client._client.close.assert_called_once()

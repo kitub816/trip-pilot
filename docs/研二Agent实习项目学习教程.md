@@ -4,7 +4,7 @@
 
 学习目标：读完本文并完成练习后，你应能独立讲清 TripPilot 的业务目标、请求链路、架构取舍、核心源码、测试体系、真实能力边界，并能现场定位问题或扩展一个约束。
 
-事实基线：Phase 0–32 已实现；后端完整离线回归 219 passed、2 skipped；前端生产构建与 12 项 Playwright 测试通过；[Phase 31 的 GitHub Actions](https://github.com/kitub816/trip-pilot/actions/runs/36313422752) 成功。Windows 原生模式已真实取得北京 POI，但 Docker Desktop 到高德的 TLS 握手在当前设备仍未通过；真实供应商加部署代理的 SSE 长连接仍未验收。历史 P50/P95 只测本地约束层，不是全链路性能。
+事实基线：Phase 0–33 已实现；后端完整离线回归 219 passed、2 skipped；前端生产构建与 12 项 Playwright 测试通过；[Phase 32 的 GitHub Actions](https://github.com/kitub816/trip-pilot/actions/runs/36398983398) 成功。Windows 原生模式已真实取得北京 POI，但 Docker Desktop 到高德的 TLS 握手在当前设备仍未通过；真实供应商完整重规划与部署代理的 SSE 长连接仍未验收。历史 P50/P95 只测本地约束层，不是全链路性能。
 
 ## 1. 项目定位
 
@@ -244,6 +244,8 @@ Alembic 0001_plan_ownership 支持新表与旧表升级。workflow_version 不�
 ### 10.1 真正的流式进度：从图节点到网页
 
 Phase 31 解决的是长任务的**可见性**。它发送阶段事件，而不是模型逐 token 输出。`progress` 表示对应工作已完成，`result` 才是可展示的最终计划；`error` 只包含公开错误码和安全提示。进度条的百分比是阶段标识，不是预计剩余时间。
+
+Phase 33 进一步处理长任务的**时间上界**。LangGraph 已经负责一次有业务语义的有限重规划，ModelGateway 负责调用次数预算，因此底层 OpenAI SDK 不再自动重试长生成 POST。单次调用只服从 `LLM_TIMEOUT`，避免 180 秒配置被默认两次重试放大到最坏约 540 秒。
 
 事件来自实际代码执行点。例如 `backend/app/workflows/trip_workflow.py` 在检索与证据读取都结束后才报告 `retrieved`：
 

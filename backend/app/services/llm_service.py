@@ -79,6 +79,11 @@ def get_llm() -> "HelloAgentsLLM":
                 _llm_instance = HelloAgentsLLM(api_key=settings.llm_api_key.get_secret_value(),
                     base_url=settings.llm_base_url, model=settings.llm_model,
                     timeout=settings.llm_timeout, provider="custom")
+                # The workflow already owns bounded format repair and replanning. The
+                # OpenAI SDK defaults to two extra retries, which can turn a 180-second
+                # provider timeout into a roughly 540-second wait and may duplicate a
+                # billable planning POST. Keep one model call to one transport attempt.
+                _llm_instance._client.max_retries = 0
             except Exception as exc:
                 raise upstream_failure(exc) from exc
         return _llm_instance

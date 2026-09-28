@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-Phase 0–32 的阶段代码与记录已落地；关键规格缺口列于下方，不能视为线上验收完成。各阶段独立测试、提交与归档。
+Phase 0–33 的阶段代码与记录已落地；关键规格缺口列于下方，不能视为线上验收完成。各阶段独立测试、提交与归档。
 
 ## 当前架构
 
@@ -55,6 +55,7 @@ Phase 0–32 的阶段代码与记录已落地；关键规格缺口列于下方�
 | 21 | [北京公交失败链路修复](phase21.md)，单例真实复测通过，限流重试、保序路线和时间反馈改进 |
 | 31 | [真实工作流进度流](phase31.md)，SSE 进度、兼容 JSON 接口与前端阶段提示 |
 | 32 | [Windows 代理环境下的高德 MCP 直连修复](phase32.md)，本地真实 POI 已验证，Docker TLS 仍待解决 |
+| 33 | [限制 LLM SDK 隐式长重试](phase33.md)，模型调用上界与配置一致，真实重规划仍待复测 |
 
 ## Phase 11 修改
 
@@ -206,3 +207,7 @@ Alembic 取代 create_all，并兼容升级旧 trip_plans 表。计划 API 增�
 ## Phase 32 修改
 
 真实 `NO_CANDIDATES` 定位为 Windows 系统代理导致固定版高德 MCP 的 `requests` 出现 ProxyError/SSL EOF。MCP 子进程强制 `restapi.amap.com` 进入 `NO_PROXY/no_proxy`，公交 HTTP 客户端禁用环境代理继承。完整后端回归 **219 passed、2 skipped**；Windows 本地真实高德 MCP 与前端代理 API 均返回 6 条北京 POI。Docker 容器的高德 TLS 出口仍失败，当前使用本地开发模式；未运行真实 LLM 完整规划。详见 [phase32.md](phase32.md)。
+
+## Phase 33 修改
+
+真实规划在 85% 有限重规划阶段暴露 SDK 隐式重试：180 秒单次 LLM 超时会被默认两次传输重试放大到最坏约 540 秒，并逼近网页 600 秒上限。LangGraph 已有一次有界重规划，ModelGateway 已有调用预算，因此固定版 HelloAgents 底层 OpenAI 客户端改为 `max_retries=0`。专项测试 5 passed，完整后端回归 **219 passed、2 skipped**，重启后健康检查 200；未重新执行真实完整规划。详见 [phase33.md](phase33.md)。

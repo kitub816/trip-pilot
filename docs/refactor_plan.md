@@ -1,10 +1,12 @@
 # TripPilot 渐进重构计划
 
-本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–32 的阶段代码与记录已落地；剩余规格缺口见 progress。实际范围、验证与限制见 [progress.md](progress.md)。
+本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–33 的阶段代码与记录已落地；剩余规格缺口见 progress。实际范围、验证与限制见 [progress.md](progress.md)。
 
 Phase 31 增加真实工作流进度 SSE 与网页阶段提示，原 JSON 规划契约保留；详见 [phase31.md](phase31.md)。后续优先验证真实供应商/代理长连接，再考虑显式可编辑偏好，不把浏览器 token 称为账号记忆。
 
 Phase 32 修复 Windows 系统代理污染高德 MCP 与公交 HTTP 调用；本地真实 POI 已验证。当前设备的 Docker 高德 TLS 出口仍失败，不能声称容器真实供应商链路通过，详见 [phase32.md](phase32.md)。
+
+Phase 33 关闭固定版 HelloAgents 底层 OpenAI SDK 的隐式传输重试，使一次 LLM 调用只服从一次配置超时；业务级格式修复和 LangGraph 有限重规划保持不变，详见 [phase33.md](phase33.md)。
 
 ## 迁移原则与落点
 
