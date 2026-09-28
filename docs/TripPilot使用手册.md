@@ -1,6 +1,6 @@
 # TripPilot 旅行助手使用手册
 
-版本基线：Phase 29，2026-09-23。
+版本基线：Phase 32，2026-09-28。
 
 本手册面向普通使用者和本地部署者，覆盖配置、启动、网页操作、API、恢复、测试、状态清理和故障排查。
 
@@ -325,7 +325,7 @@ cd E:\travel-agents-1\helloagents-trip-planner\backend
 .\.venv\Scripts\python.exe -m pytest
 ~~~
 
-当前基线：217 passed、2 skipped、1 条第三方 warning。两个 skipped 是需外部 Redis/MySQL 条件的集成测试。
+当前基线：219 passed、2 skipped、1 条第三方 warning。两个 skipped 是需外部 Redis/MySQL 条件的集成测试。
 
 前端：
 
@@ -335,7 +335,7 @@ npm run build
 npm run test:e2e
 ~~~
 
-当前基线：构建通过，Playwright 10 passed；主包体积 warning 仍存在。
+当前基线：构建通过，Playwright 12 passed；主包体积 warning 仍存在。
 
 约束层 benchmark：
 
@@ -372,6 +372,10 @@ cd E:\travel-agents-1\helloagents-trip-planner\backend
 ### NO_CANDIDATES
 
 未获得有效景点候选。检查城市、关键词、高德权限、网络和限流。系统不会编造候选。
+
+#### Windows 显示“未获取到有效景点”
+
+如果 Windows 设置了本地代理，Phase 32 起高德 MCP 会对 `restapi.amap.com` 强制直连。当前设备的 Docker Desktop 网络仍可能在高德 TLS 握手时报 `UNEXPECTED_EOF`；此时停止 Compose，分别运行本地后端与前端，并访问 `http://localhost:5173`。本地模式是否具备持久恢复取决于 `backend/.env` 中的 `DATABASE_URL` 与 `CHECKPOINT_PATH`。
 
 ### UPSTREAM_TIMEOUT / UPSTREAM_ERROR
 

@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-Phase 0–31 的阶段代码与记录已落地；关键规格缺口列于下方，不能视为线上验收完成。各阶段独立测试、提交与归档。
+Phase 0–32 的阶段代码与记录已落地；关键规格缺口列于下方，不能视为线上验收完成。各阶段独立测试、提交与归档。
 
 ## 当前架构
 
@@ -54,6 +54,7 @@ Phase 0–31 的阶段代码与记录已落地；关键规格缺口列于下方�
 | 20 | [真实端到端初测与供应商适配修复](phase20.md)，2/3 固定案例初测成功，北京公交仍失败 |
 | 21 | [北京公交失败链路修复](phase21.md)，单例真实复测通过，限流重试、保序路线和时间反馈改进 |
 | 31 | [真实工作流进度流](phase31.md)，SSE 进度、兼容 JSON 接口与前端阶段提示 |
+| 32 | [Windows 代理环境下的高德 MCP 直连修复](phase32.md)，本地真实 POI 已验证，Docker TLS 仍待解决 |
 
 ## Phase 11 修改
 
@@ -201,3 +202,7 @@ Alembic 取代 create_all，并兼容升级旧 trip_plans 表。计划 API 增�
 新增真实工作流阶段 SSE：检索、草稿、路线、预算、校验完成后发事件；`result` 在校验后发送，启用业务存储时还要等写入完成；错误只传安全代码。网页用 fetch 读取 POST SSE，并保留原恢复 ID/所有权 token；旧 JSON API 保持可用。Nginx 关闭响应缓冲。后端 **217 passed、2 skipped、1 条第三方警告**；前端 build 和 12 项浏览器契约测试通过。未运行真实供应商浏览器长连接验收，详见 [phase31.md](phase31.md)。
 
 2026-09-27 文档维护：已将[研二 Agent 实习项目学习教程](研二Agent实习项目学习教程.md)同步到 Phase 31 的 SSE 实现、源码路径、测试和能力边界；无运行时代码变化。
+
+## Phase 32 修改
+
+真实 `NO_CANDIDATES` 定位为 Windows 系统代理导致固定版高德 MCP 的 `requests` 出现 ProxyError/SSL EOF。MCP 子进程强制 `restapi.amap.com` 进入 `NO_PROXY/no_proxy`，公交 HTTP 客户端禁用环境代理继承。完整后端回归 **219 passed、2 skipped**；Windows 本地真实高德 MCP 与前端代理 API 均返回 6 条北京 POI。Docker 容器的高德 TLS 出口仍失败，当前使用本地开发模式；未运行真实 LLM 完整规划。详见 [phase32.md](phase32.md)。

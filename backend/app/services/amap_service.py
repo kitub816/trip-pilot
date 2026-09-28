@@ -191,7 +191,8 @@ class AmapService:
         params = {**coordinates, "city": city, "cityd": city, "key": key}
         try:
             async with httpx.AsyncClient(timeout=settings.tool_timeout,
-                                         transport=self._transit_transport) as client:
+                                         transport=self._transit_transport,
+                                         trust_env=False) as client:
                 for attempt in range(2):
                     try:
                         response = await client.get(

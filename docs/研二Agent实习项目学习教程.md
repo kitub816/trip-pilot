@@ -4,7 +4,7 @@
 
 学习目标：读完本文并完成练习后，你应能独立讲清 TripPilot 的业务目标、请求链路、架构取舍、核心源码、测试体系、真实能力边界，并能现场定位问题或扩展一个约束。
 
-事实基线：Phase 0–31 已实现；后端完整离线回归 217 passed、2 skipped；前端生产构建与 12 项 Playwright 测试通过；[Phase 31 的 GitHub Actions](https://github.com/kitub816/trip-pilot/actions/runs/36313422752) 成功。历史 P50/P95 只测本地约束层，不是全链路性能。真实供应商加部署代理的 SSE 长连接仍未验收。
+事实基线：Phase 0–32 已实现；后端完整离线回归 219 passed、2 skipped；前端生产构建与 12 项 Playwright 测试通过；[Phase 31 的 GitHub Actions](https://github.com/kitub816/trip-pilot/actions/runs/36313422752) 成功。Windows 原生模式已真实取得北京 POI，但 Docker Desktop 到高德的 TLS 握手在当前设备仍未通过；真实供应商加部署代理的 SSE 长连接仍未验收。历史 P50/P95 只测本地约束层，不是全链路性能。
 
 ## 1. 项目定位
 
@@ -320,7 +320,7 @@ CI 使用 Python 3.10 和 Node 22，运行后端全量测试、前端构建和 P
 - 基于 FastAPI、LangGraph 和 Pydantic 构建 plan → route → budget → validate → bounded replan；LLM 只生成候选 ID 草稿，地点身份由服务端水合。
 - 设计 MCP Tool Runtime，支持 schema/参数校验、单次与总超时、有界重试、并发配额、部分失败和子进程清理；Redis 仅缓存类型化地图事实。
 - 用确定性 Python 实现路线矩阵、稳定排序、预算、时间窗和硬约束 Validator；仅带来源、抓取时间、适用期和可信状态的 RAG 证据参与硬判断。
-- 用 MySQL、Alembic、乐观锁、capability token、数据库租约和 SQLite checkpoint 实现网页恢复；以 SSE 报告真实工作流阶段，保留 JSON 接口；建立 217 passed、2 skipped 后端回归、12 项 Playwright、Docker Compose 与 GitHub Actions。
+- 用 MySQL、Alembic、乐观锁、capability token、数据库租约和 SQLite checkpoint 实现网页恢复；以 SSE 报告真实工作流阶段，保留 JSON 接口；建立 219 passed、2 skipped 后端回归、12 项 Playwright、Docker Compose 与 GitHub Actions。
 
 数字必须随 docs/progress.md 更新。不得把约束层 P50/P95 写成全链路性能，不得编造 token、成本、命中率或线上成功率。
 
@@ -332,7 +332,7 @@ CI 使用 Python 3.10 和 Node 22，运行后端全量测试、前端构建和 P
 4. 可靠工具：MCP timeout、retry、partial failure、Redis。
 5. 硬约束：路线、预算、时间窗、证据与有限 Replan。
 6. 长任务体验与恢复：真实阶段 SSE、15 秒心跳、断线后状态查询、checkpoint 与 at-least-once。
-7. 验证：217 passed、2 skipped、12 项浏览器、容器迁移、远端 CI。
+7. 验证：219 passed、2 skipped、12 项浏览器、容器迁移、远端 CI。
 8. 反思：真实供应商长连接、官方语料、评测、账号和网络 checkpoint。
 
 ## 15. 高频问答

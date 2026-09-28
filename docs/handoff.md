@@ -78,3 +78,7 @@ Alembic 已取代 create_all，并兼容旧 trip_plans 表原地升级。浏览�
 ## 2026-09-27：Phase 31 更新
 
 网页规划改用 `POST /api/trip/plan/stream` 接收真实工作流阶段 SSE；原 JSON `/plan` 保留。结果须通过确定性校验；启用业务存储时还须写入完成后才返回。后端 217 passed、2 skipped；前端 build、12 项浏览器契约测试通过。长连接尚未以真实高德/LLM 与部署代理验收。详见 [phase31.md](phase31.md)。
+
+## 2026-09-28：Phase 32 更新
+
+`NO_CANDIDATES` 定位为 Windows 系统代理导致高德 MCP ProxyError/SSL EOF。已为高德子进程设置 NO_PROXY，并关闭公交 HTTP 客户端的环境代理继承。后端 219 passed、2 skipped；Windows 本地 MCP 和前端代理真实返回 6 条北京 POI。Docker 中高德 TLS 仍失败，当前运行入口为 `http://localhost:5173`，未验证真实 LLM 完整规划。详见 [phase32.md](phase32.md)。

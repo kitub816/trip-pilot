@@ -22,6 +22,7 @@ from ..errors import (AppError, ConfigurationError, ServiceBusy, ToolArgumentErr
                       ToolProtocolError, ToolRateLimit, UpstreamError, UpstreamTimeout)
 
 logger = logging.getLogger("trippilot.tools")
+AMAP_API_HOST = "restapi.amap.com"
 
 
 class Arguments(BaseModel):
@@ -102,12 +103,7 @@ async def amap_session():
     key = settings.amap_api_key.get_secret_value()
     if not key.strip():
         raise ConfigurationError()
-    child_env = {"AMAP_MAPS_API_KEY": key}
-    # Explicit MCP env replaces the default inherited environment. Preserve a
-    # caller-selected direct route for Amap without exposing proxy credentials.
-    for name in ("NO_PROXY", "no_proxy"):
-        if os.environ.get(name):
-            child_env[name] = os.environ[name]
+    child_env = amap_child_env(key)
     params = StdioServerParameters(command="uvx", args=["amap-mcp-server==0.1.11"],
                                   env=child_env)
     # Child stderr can contain credentials and queries; never forward it to API logs.
@@ -115,6 +111,18 @@ async def amap_session():
         async with stdio_client(params, errlog=errlog) as (reader, writer):
             async with ClientSession(reader, writer) as session:
                 yield session
+
+
+def amap_child_env(key: str) -> dict[str, str]:
+    """Keep Amap off OS/environment proxies without copying proxy credentials."""
+    bypasses: list[str] = []
+    for name in ("NO_PROXY", "no_proxy"):
+        bypasses.extend(value.strip() for value in os.environ.get(name, "").split(",")
+                        if value.strip())
+    if AMAP_API_HOST not in {value.casefold() for value in bypasses}:
+        bypasses.append(AMAP_API_HOST)
+    no_proxy = ",".join(dict.fromkeys(bypasses))
+    return {"AMAP_MAPS_API_KEY": key, "NO_PROXY": no_proxy, "no_proxy": no_proxy}
 
 
 def parse_payload(value: JsonValue) -> JsonValue:
