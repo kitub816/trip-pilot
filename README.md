@@ -86,7 +86,7 @@ cd ..\frontend
 npm run build
 ```
 
-最近一次后端完整离线回归为 **222 passed、2 skipped**；前端生产构建通过，默认浏览器回归为 **12 passed、1 skipped**，其中 skip 是需显式开启的真实供应商用例。固定约束评测集为 **3/3**，数据和运行器分别在 `backend/evaluation/constraint_cases.json`、`backend/evaluation/benchmark.py`。一次本机测量的约束解析 P50/P95 见 [原始结果](docs/benchmark_results.json)；它不包含地图、LLM、路线或网络耗时，也不代表线上规划性能。Phase 36 的西安三日真实浏览器固定案例进入完整结果页；这仍是单例，不是线上成功率。未取得可审计的 provider token、成本或缓存命中率，因此不提供这些数字。
+最近一次后端完整离线回归为 **222 passed、2 skipped**；前端生产构建通过，默认浏览器回归为 **12 passed、3 skipped**，三个 skip 是需显式开启的真实供应商用例。固定约束评测集为 **3/3**，数据和运行器分别在 `backend/evaluation/constraint_cases.json`、`backend/evaluation/benchmark.py`。一次本机测量的约束解析 P50/P95 见 [原始结果](docs/benchmark_results.json)；它不包含地图、LLM、路线或网络耗时，也不代表线上规划性能。真实浏览器逐次结果覆盖西安公交、上海步行和杭州自驾，同时保留一次供应商超时，见 [原始记录](docs/live_browser_e2e_results.json)；这些相关小样本不是线上成功率。未取得可审计的 provider token、成本或缓存命中率，因此不提供这些数字。
 
 ## 已知限制
 
@@ -109,4 +109,4 @@ Phase 21 已修复北京公交限流重试和交通时长反馈，原失败案�
 
 持久工作流运行时已固定稳定 LangGraph 版本。安装新 requirements 后再运行；本机可使用 backend/.venv/Scripts/python.exe。浏览器回归当前 12 项。
 
-规划请求前端和代理等待为 600 秒；超时不等于后端取消。启用 MySQL 与 SQLite checkpoint 后，浏览器可检查并继续未完成请求。最近后端回归 222 passed、2 skipped、1 条第三方警告。Alembic 已在隔离 MySQL 8.4 容器实测，计划所有权、数据库租约、工作流版本和终态 checkpoint 清理见 [Phase 29](docs/phase29.md)。流式进度实现与边界见 [Phase 31](docs/phase31.md)，代理绕过与 Docker TLS 边界见 [Phase 32](docs/phase32.md)，模型重试边界见 [Phase 33](docs/phase33.md)，公交空方案回退见 [Phase 34](docs/phase34.md)，确定性到访时间顺延见 [Phase 35](docs/phase35.md)，真实浏览器固定案例见 [Phase 36](docs/phase36.md)。
+规划请求前端和代理等待为 600 秒；超时不等于后端取消。启用 MySQL 与 SQLite checkpoint 后，浏览器可检查并继续未完成请求。最近后端回归 222 passed、2 skipped、1 条第三方警告。Alembic 已在隔离 MySQL 8.4 容器实测，计划所有权、数据库租约、工作流版本和终态 checkpoint 清理见 [Phase 29](docs/phase29.md)。流式进度实现与边界见 [Phase 31](docs/phase31.md)，代理绕过与 Docker TLS 边界见 [Phase 32](docs/phase32.md)，模型重试边界见 [Phase 33](docs/phase33.md)，公交空方案回退见 [Phase 34](docs/phase34.md)，确定性到访时间顺延见 [Phase 35](docs/phase35.md)，真实浏览器单例见 [Phase 36](docs/phase36.md)，多城市真实验收见 [Phase 37](docs/phase37.md)。

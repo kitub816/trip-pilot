@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "executed_at": "2026-09-28",
+  "environment": "Windows local backend and Playwright Chromium",
+  "scope": "Individual real browser acceptance attempts; not a benchmark or success-rate estimate.",
+  "provider_usage_available": false,
+  "cost_available": false,
+  "map_js_key_in_test_browser": false,
+  "attempts": [
+    {
+      "case_id": "xi-an-public-transit",
+      "request_id": "3610825196be4395a8b36bed097a6eeb",
+      "city": "西安",
+      "dates": ["2026-09-28", "2026-09-30"],
+      "transportation": "公共交通",
+      "result": "completed",
+      "stream_duration_ms": 115578,
+      "browser_evidence": ["result page", "three day tabs", "budget", "weather"],
+      "warnings": ["BUDGET_INCOMPLETE", "EVIDENCE_UNAVAILABLE"]
+    },
+    {
+      "case_id": "shanghai-walking-first-success",
+      "request_id": "53b28f0cdfea4f28b1b06f7af6a7cf98",
+      "city": "上海",
+      "dates": ["2026-09-29", "2026-09-30"],
+      "transportation": "步行",
+      "result": "completed",
+      "stream_duration_ms": 129000,
+      "browser_evidence": ["result page", "two day tabs", "six attractions", "visit times", "lodging", "meals", "budget", "weather"],
+      "warnings": ["BUDGET_INCOMPLETE", "EVIDENCE_UNAVAILABLE"],
+      "harness_note": "The business result completed; the first harness run later failed on an overly strict emoji text selector."
+    },
+    {
+      "case_id": "hangzhou-driving",
+      "request_id": "55b50f8abfed4544b5e644a1d4966c27",
+      "city": "杭州",
+      "dates": ["2026-09-29", "2026-09-30"],
+      "transportation": "自驾",
+      "result": "completed",
+      "stream_duration_ms": 110782,
+      "browser_evidence": ["result page", "two day tabs", "budget", "weather"],
+      "warnings": ["BUDGET_INCOMPLETE", "EVIDENCE_UNAVAILABLE"]
+    },
+    {
+      "case_id": "shanghai-walking-provider-timeout",
+      "request_id": "91a9d80df9444015b41752b8cc19910a",
+      "city": "上海",
+      "dates": ["2026-09-29", "2026-09-30"],
+      "transportation": "步行",
+      "result": "failed",
+      "error_code": "UPSTREAM_TIMEOUT",
+      "stream_duration_ms": null,
+      "browser_evidence": ["typed error response"],
+      "warnings": []
+    },
+    {
+      "case_id": "shanghai-walking-pdf-retry",
+      "request_id": "d356ae844bf745ba9737e731b824c266",
+      "city": "上海",
+      "dates": ["2026-09-29", "2026-09-30"],
+      "transportation": "步行",
+      "result": "completed",
+      "stream_duration_ms": 120109,
+      "browser_evidence": ["result page", "two day tabs", "last day expanded", "PDF downloaded", "PDF signature verified"],
+      "warnings": ["BUDGET_INCOMPLETE", "EVIDENCE_UNAVAILABLE"]
+    }
+  ],
+  "limitations": [
+    "The sample is intentionally small and was not randomized.",
+    "Repeated Shanghai attempts are correlated and must not be treated as independent production traffic.",
+    "No provider token count, billable usage, cache hit rate, or cost was available.",
+    "The browser test did not load the Amap JavaScript map because no JS key was injected."
+  ]
+}

@@ -98,3 +98,7 @@ Alembic 已取代 create_all，并兼容旧 trip_plans 表原地升级。浏览�
 ## 2026-09-28：Phase 36 更新
 
 已用 Playwright Chromium 真实提交西安 3 天固定案例，页面进入完整结果页，显示三天、景点时间、住宿、餐饮、天气和预算；后端记录 `stream.completed`，单次 115578 ms 仅为验收记录。前端显式初始化免预约布尔值，并新增默认跳过的真实 E2E。build 通过，默认浏览器回归 12 passed、1 skipped。Playwright 环境未配置高德 JS Key，所以地图组件加载失败；供应商单例不能代表成功率或性能。详见 [phase36.md](phase36.md)。
+
+## 2026-09-28：Phase 37 更新
+
+真实 Chromium 固定场景现覆盖西安公交、上海步行和杭州自驾；上海成功重试还完成最后一天切换与 PDF 文件签名校验。用例检查实际 POST 载荷，并在页面错误出现时立即失败。逐次 JSON 保留多次完成和一次 LLM `UPSTREAM_TIMEOUT`，不汇总为成功率或性能。build 通过，默认浏览器回归 12 passed、3 skipped。详见 [phase37.md](phase37.md) 与 [live_browser_e2e_results.json](live_browser_e2e_results.json)。
