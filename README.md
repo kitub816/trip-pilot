@@ -86,7 +86,7 @@ cd ..\frontend
 npm run build
 ```
 
-最近一次后端完整离线回归为 **222 passed、2 skipped**；前端生产构建和 12 项浏览器契约测试通过。固定约束评测集为 **3/3**，数据和运行器分别在 `backend/evaluation/constraint_cases.json`、`backend/evaluation/benchmark.py`。一次本机测量的约束解析 P50/P95 见 [原始结果](docs/benchmark_results.json)；它不包含地图、LLM、路线或网络耗时，也不代表线上规划性能。三条固定真实高德/LLM 案例初测中两条通过、一条失败，详见 [逐例结果](docs/live_e2e_results.json)；该小样本不是线上成功率。未取得可审计的 provider token、成本或缓存命中率，因此不提供这些数字。
+最近一次后端完整离线回归为 **222 passed、2 skipped**；前端生产构建通过，默认浏览器回归为 **12 passed、1 skipped**，其中 skip 是需显式开启的真实供应商用例。固定约束评测集为 **3/3**，数据和运行器分别在 `backend/evaluation/constraint_cases.json`、`backend/evaluation/benchmark.py`。一次本机测量的约束解析 P50/P95 见 [原始结果](docs/benchmark_results.json)；它不包含地图、LLM、路线或网络耗时，也不代表线上规划性能。Phase 36 的西安三日真实浏览器固定案例进入完整结果页；这仍是单例，不是线上成功率。未取得可审计的 provider token、成本或缓存命中率，因此不提供这些数字。
 
 ## 已知限制
 
@@ -99,7 +99,7 @@ npm run build
 - LLM 提议到访时刻后，路线层按实测交通时长确定性顺延后续景点并重算结束时间；营业时间和其他硬约束仍由 Validator 判定。
 - 高德 MCP 子进程会强制绕过工作站代理；Windows 本地真实 POI 已验证。当前设备的 Docker Desktop 网络访问高德 HTTPS 仍会 TLS EOF，因此真实供应商调试暂用本地开发模式，不能视为容器真实链路通过。
 - LangGraph 可用 SQLite checkpoint 恢复已提交节点；正在执行的节点仍可能重试，不承诺供应商调用 exactly-once。计划由浏览器 capability token 保护，数据库租约支持多实例互斥；它不是账号体系，SQLite checkpoint 也不适合多节点共享。
-- 浏览器已有固定 API 的端到端契约测试，仍未覆盖真实供应商浏览器 E2E；构建仍提示主包较大。依赖审计为 0，GitHub Actions 的 backend/frontend 作业已在远端通过；Phase 29 实现提交 `0a899ec` 对应 [Verify #35837564540](https://github.com/kitub816/trip-pilot/actions/runs/35837564540) 成功。
+- 浏览器已有固定 API 的端到端契约测试；Phase 36 另完成一次显式开启的真实供应商浏览器固定案例。该单例不代表成功率，且验收环境未注入高德 JS 地图 Key。构建仍提示主包较大。依赖审计为 0，GitHub Actions 的 backend/frontend 作业已在远端通过。
 
 阶段过程和实测证据见 [项目进度](docs/progress.md)、[重构计划](docs/refactor_plan.md) 与 [Phase 0 架构分析](docs/current_architecture.md)。
 
@@ -109,4 +109,4 @@ Phase 21 已修复北京公交限流重试和交通时长反馈，原失败案�
 
 持久工作流运行时已固定稳定 LangGraph 版本。安装新 requirements 后再运行；本机可使用 backend/.venv/Scripts/python.exe。浏览器回归当前 12 项。
 
-规划请求前端和代理等待为 600 秒；超时不等于后端取消。启用 MySQL 与 SQLite checkpoint 后，浏览器可检查并继续未完成请求。最近后端回归 222 passed、2 skipped、1 条第三方警告。Alembic 已在隔离 MySQL 8.4 容器实测，计划所有权、数据库租约、工作流版本和终态 checkpoint 清理见 [Phase 29](docs/phase29.md)。流式进度实现与边界见 [Phase 31](docs/phase31.md)，代理绕过与 Docker TLS 边界见 [Phase 32](docs/phase32.md)，模型重试边界见 [Phase 33](docs/phase33.md)，公交空方案回退见 [Phase 34](docs/phase34.md)，确定性到访时间顺延见 [Phase 35](docs/phase35.md)。
+规划请求前端和代理等待为 600 秒；超时不等于后端取消。启用 MySQL 与 SQLite checkpoint 后，浏览器可检查并继续未完成请求。最近后端回归 222 passed、2 skipped、1 条第三方警告。Alembic 已在隔离 MySQL 8.4 容器实测，计划所有权、数据库租约、工作流版本和终态 checkpoint 清理见 [Phase 29](docs/phase29.md)。流式进度实现与边界见 [Phase 31](docs/phase31.md)，代理绕过与 Docker TLS 边界见 [Phase 32](docs/phase32.md)，模型重试边界见 [Phase 33](docs/phase33.md)，公交空方案回退见 [Phase 34](docs/phase34.md)，确定性到访时间顺延见 [Phase 35](docs/phase35.md)，真实浏览器固定案例见 [Phase 36](docs/phase36.md)。

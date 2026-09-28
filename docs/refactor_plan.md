@@ -1,6 +1,6 @@
 # TripPilot 渐进重构计划
 
-本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–35 的阶段代码与记录已落地；剩余规格缺口见 progress。实际范围、验证与限制见 [progress.md](progress.md)。
+本计划基于 [现状分析](current_architecture.md)，规格来源为根目录 `docs-project_spec.md`。Phase 0–36 的阶段代码与记录已落地；剩余规格缺口见 progress。实际范围、验证与限制见 [progress.md](progress.md)。
 
 Phase 31 增加真实工作流进度 SSE 与网页阶段提示，原 JSON 规划契约保留；详见 [phase31.md](phase31.md)。后续优先验证真实供应商/代理长连接，再考虑显式可编辑偏好，不把浏览器 token 称为账号记忆。
 
@@ -11,6 +11,8 @@ Phase 33 关闭固定版 HelloAgents 底层 OpenAI SDK 的隐式传输重试，�
 Phase 34 对高德明确成功但公交候选为空的相邻路段查询实测步行路线；真正的供应商错误和硬约束超限仍失败，详见 [phase34.md](phase34.md)。
 
 Phase 35 将 LLM 草稿中的到访时刻交给 RouteOptimizer 按实测交通时长确定性顺延，Validator 继续检查营业时间、交通和其他硬约束，详见 [phase35.md](phase35.md)。
+
+Phase 36 用 Playwright Chromium 验收西安三日真实供应商链路，并加入默认跳过、显式开启的真实 E2E；单例通过不作为成功率或性能数据，详见 [phase36.md](phase36.md)。
 
 ## 迁移原则与落点
 

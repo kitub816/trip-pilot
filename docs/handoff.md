@@ -94,3 +94,7 @@ Alembic 已取代 create_all，并兼容旧 trip_plans 表原地升级。浏览�
 ## 2026-09-28：Phase 35 更新
 
 西安 3 天案例重规划后仍有 `VISIT_TIME_CONFLICT`。路线阶段现在用实测交通时长向上取整并确定性顺延后续到访时刻，未知路线和跨午夜不编造。专项 32 passed，后端 222 passed、2 skipped；服务已重启，西安完整案例待用户复测。详见 [phase35.md](phase35.md)。
+
+## 2026-09-28：Phase 36 更新
+
+已用 Playwright Chromium 真实提交西安 3 天固定案例，页面进入完整结果页，显示三天、景点时间、住宿、餐饮、天气和预算；后端记录 `stream.completed`，单次 115578 ms 仅为验收记录。前端显式初始化免预约布尔值，并新增默认跳过的真实 E2E。build 通过，默认浏览器回归 12 passed、1 skipped。Playwright 环境未配置高德 JS Key，所以地图组件加载失败；供应商单例不能代表成功率或性能。详见 [phase36.md](phase36.md)。

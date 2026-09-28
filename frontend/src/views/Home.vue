@@ -285,7 +285,8 @@ const formData = reactive<TripFormState>({
   accommodation: '经济型酒店',
   preferences: [],
   free_text_input: '',
-  travelers: undefined
+  travelers: undefined,
+  avoid_reservation_required: false
 })
 
 
