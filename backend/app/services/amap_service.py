@@ -218,7 +218,21 @@ class AmapService:
                     except ValueError as exc:
                         raise ToolProtocolError() from None
                     try:
-                        result = self._parse_route(payload, "transit")
+                        data = parse_payload(payload)
+                        route = data.get("route") if isinstance(data, dict) else None
+                        transits = route.get("transits") if isinstance(route, dict) else None
+                        if isinstance(transits, list) and not transits:
+                            # Amap can legitimately return no bus/subway option for a
+                            # short adjacent-POI leg. Public transit trips still allow
+                            # walking such a leg, so obtain measured walking facts rather
+                            # than treating this provider result as a retryable outage.
+                            fallback = await self.runtime.call(
+                                "maps_direction_walking_by_coordinates", coordinates,
+                            )
+                            result = self._parse_route(fallback.payload, "walking")
+                            logger.info("tool.completed.maps_direction_transit_walking_fallback")
+                            return result
+                        result = self._parse_route(data, "transit")
                     except ToolRateLimit:
                         if attempt == 0:
                             await asyncio.sleep(1.0)

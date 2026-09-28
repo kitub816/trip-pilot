@@ -1,6 +1,6 @@
 # TripPilot 旅行助手使用手册
 
-版本基线：Phase 33，2026-09-28。
+版本基线：Phase 34，2026-09-28。
 
 本手册面向普通使用者和本地部署者，覆盖配置、启动、网页操作、API、恢复、测试、状态清理和故障排查。
 
@@ -325,7 +325,7 @@ cd E:\travel-agents-1\helloagents-trip-planner\backend
 .\.venv\Scripts\python.exe -m pytest
 ~~~
 
-当前基线：219 passed、2 skipped、1 条第三方 warning。两个 skipped 是需外部 Redis/MySQL 条件的集成测试。
+当前基线：220 passed、2 skipped、1 条第三方 warning。两个 skipped 是需外部 Redis/MySQL 条件的集成测试。
 
 前端：
 
@@ -384,6 +384,8 @@ cd E:\travel-agents-1\helloagents-trip-planner\backend
 ### 长时间停在 85%“有限重规划”
 
 这表示确定性校验发现硬约束冲突，正在执行最多一次的 LLM 重规划。Phase 33 起 SDK 不再额外重试长生成请求，因此单次模型调用最多等待 `LLM_TIMEOUT`。浏览器超过该时间仍无结果时查看后端安全错误码；降低交通时间上限等严格约束可能使计划无法通过，系统会返回校验失败而不是伪造可行方案。
+
+公共交通模式下，相邻景点可能没有公交候选。Phase 34 起，高德明确返回空公交列表时会查询实测步行路线；若供应商失败、步行路线也不可用或实测时间超过上限，计划仍会失败。
 
 ### PLAN_ACCESS_DENIED
 

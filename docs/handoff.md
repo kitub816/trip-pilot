@@ -86,3 +86,7 @@ Alembic 已取代 create_all，并兼容旧 trip_plans 表原地升级。浏览�
 ## 2026-09-28：Phase 33 更新
 
 真实规划在 85% 重规划阶段等待过久，定位为 180 秒单次超时叠加 OpenAI SDK 默认两次隐式重试。已将固定版 HelloAgents 的底层客户端设置为 `max_retries=0`，业务级一次重规划不变。后端 219 passed、2 skipped，服务已重启且健康检查 200；尚未重跑真实完整规划。详见 [phase33.md](phase33.md)。
+
+## 2026-09-28：Phase 34 更新
+
+用户复测两轮规划均以同一公交 `ROUTE_UNAVAILABLE` 失败。高德成功但 `transits=[]` 时现改查实测步行路线，真实天安门到故宫探针为 1064 米、851 秒；其他上游错误和硬约束不放宽。后端 220 passed、2 skipped，服务已重启；完整网页规划待用户重试。详见 [phase34.md](phase34.md)。

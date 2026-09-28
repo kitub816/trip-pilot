@@ -92,6 +92,28 @@ def test_transit_rejects_provider_error_without_fabricating_route(monkeypatch):
         asyncio.run(service.aplan_route_by_coordinates(*points(), "上海", "transit"))
 
 
+def test_transit_empty_options_use_measured_walking_fallback(monkeypatch):
+    from types import SimpleNamespace
+    import app.services.amap_service as amap_module
+
+    monkeypatch.setattr(amap_module, "get_settings", lambda: SimpleNamespace(
+        amap_api_key=SecretStr("fixture"), tool_timeout=1))
+    runtime = Runtime()
+    service = AmapService(runtime, transit_transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json={
+            "status": "1", "route": {"transits": []},
+        })))
+
+    result = asyncio.run(service.aplan_route_by_coordinates(*points(), "上海", "transit"))
+
+    assert result.route_type == "walking"
+    assert result.distance == 1200 and result.duration == 900
+    assert runtime.calls == [(
+        "maps_direction_walking_by_coordinates",
+        {"origin": "121.49,31.24", "destination": "121.5,31.25"},
+    )]
+
+
 def test_transit_retries_one_timeout_then_uses_valid_response(monkeypatch):
     from types import SimpleNamespace
     import app.services.amap_service as amap_module
